@@ -18,9 +18,18 @@ function labelFor(app: DevApp, index: number): string {
 }
 
 /** Free ports, print URLs, run every app side-by-side, optionally open the browser. */
-export async function runDev(open: boolean): Promise<void> {
+export async function runDev(open: boolean, dry = false): Promise<void> {
   const { apps } = loadConfig();
   const withPort = apps.filter((app) => app.port != null);
+
+  if (dry) {
+    console.log("devkit (dry run):");
+    apps.forEach((app, i) => {
+      const url = app.port != null ? `  →  http://localhost:${app.port}${app.open ? " (open)" : ""}` : "";
+      console.log(`  [${labelFor(app, i)}] ${commandFor(app)}${url}`);
+    });
+    return;
+  }
 
   await Promise.all(withPort.map((app) => freePort(app.port as number)));
 
