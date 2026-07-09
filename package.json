@@ -1,6 +1,6 @@
 {
   "name": "@elumixor/devkit",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Dev orchestrator for bun monorepos — free ports, run apps side-by-side, open the browser when ready",
   "author": "elumixor",
   "license": "ISC",
@@ -10,8 +10,8 @@
     "url": "git+https://github.com/elumixor/devkit.git"
   },
   "bin": {
-    "devkit": "./src/bin/devkit.ts",
-    "free-port": "./src/bin/free-port.ts"
+    "devkit": "src/bin/devkit.ts",
+    "free-port": "src/bin/free-port.ts"
   },
   "files": [
     "src"
