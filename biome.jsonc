@@ -1,0 +1,86 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "files": {
+    "includes": ["src/**/*.ts", "**/*.json"],
+    "ignoreUnknown": true
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "error",
+        "useAwait": "error"
+      },
+      "style": {
+        "useShorthandAssign": "error",
+        "useConsistentObjectDefinitions": "error",
+        "useConsistentArrowReturn": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off"
+          },
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      },
+      "css": {
+        "parser": {
+          "cssModules": false,
+          "allowWrongLineComments": true,
+          "tailwindDirectives": true
+        },
+        "linter": { "enabled": false },
+        "formatter": { "enabled": false }
+      }
+    },
+    {
+      "includes": ["apps/backend/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useExhaustiveDependencies": "off"
+          },
+          "suspicious": {
+            "noEmptyBlockStatements": "error"
+          },
+          "complexity": {
+            "noUselessCatch": "error"
+          },
+          "style": {
+            "useConsistentMemberAccessibility": "error"
+          }
+        }
+      },
+      "javascript": {
+        "formatter": {
+          "bracketSameLine": true
+        }
+      }
+    }
+  ]
+}

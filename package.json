@@ -1,0 +1,35 @@
+{
+  "name": "@elumixor/devkit",
+  "version": "0.1.0",
+  "description": "Dev orchestrator for bun monorepos — free ports, run apps side-by-side, open the browser when ready",
+  "author": "elumixor",
+  "license": "ISC",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elumixor/devkit.git"
+  },
+  "bin": {
+    "devkit": "./src/bin/devkit.ts",
+    "free-port": "./src/bin/free-port.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint src",
+    "release:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
+    "release:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
+    "release:major": "npm version major -m \"Release v%s\" && git push --follow-tags"
+  },
+  "dependencies": {
+    "concurrently": "^10.0.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
