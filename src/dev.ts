@@ -9,7 +9,7 @@ const PALETTE = ["blue", "magenta", "green", "yellow", "cyan", "red"];
 function commandFor(app: DevApp): string {
   if (app.command) return app.command;
   const script = app.script ?? "dev";
-  if (app.cwd) return `bun --cwd ${app.cwd} run ${script}`;
+  if (app.cwd) return `bun run --cwd ${app.cwd} ${script}`;
   return `bun --filter ${app.filter ?? app.name} ${script}`;
 }
 
