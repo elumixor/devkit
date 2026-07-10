@@ -15,8 +15,8 @@ Add a `devkit` block to your root `package.json`:
 ```jsonc
 {
   "scripts": {
-    "dev": "devkit dev",
-    "dev:open": "devkit dev --open"
+    "dev": "devkit",
+    "dev:open": "devkit --open"
   },
   "devkit": {
     "apps": [
@@ -42,5 +42,5 @@ Each app runs `bun --filter <name> dev` by default. Override with:
 
 ## Bins
 
-- `devkit dev [--open]` — the orchestrator above.
+- `devkit [root] [--open] [--dry] [--version]` — the orchestrator above. `root` is an optional path to the folder holding the `devkit` config (defaults to the current directory); `--dry` prints the resolved commands and URLs without running anything.
 - `free-port <port>` — kill whatever is listening on a port (handy in a `predev`).
