@@ -31,31 +31,17 @@ jobs:
     runs-on: ubuntu-latest
 
     # Run on any tag
+    # A v* tag is only ever created by `bun run release:*`, which always bumps
+    # the version first — so every tag is a new version and is safe to publish.
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # full history so version-check can diff against the parent commit
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Check if version has been updated
-        id: check
-        uses: EndBug/version-check@v2
-        with:
-          diff-search: true # inspect the commit diff (tag pushes carry no commits payload)
-
+      - run: npm install -g npm@latest # OIDC trusted publishing needs npm >= 11.5.1
       - run: bun install
-        if: steps.check.outputs.changed == 'true'
-
       - run: bun run build
-        if: steps.check.outputs.changed == 'true'
-
-      - run: npm publish --access public
-        if: steps.check.outputs.changed == 'true'
-
-      - run: 'echo "Package version has not been updated, skipping publish"'
-        if: steps.check.outputs.changed == 'false'
+      - run: npm publish --access public # authenticates via OIDC (id-token: write)
