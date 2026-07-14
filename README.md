@@ -44,11 +44,14 @@ Each app runs `bun --filter <name> dev` by default. Override with:
 
 A repo usually needs a couple of gitignored files before it will run — `.env`, `infra/terraform.tfvars` — and those cannot be fetched back from a host. Vercel, for one, stores Terraform-managed variables write-only and hands them back from `vercel env pull` as *empty strings*, which looks like it worked and quietly leaves you with a `.env` full of blanks.
 
-So devkit syncs them itself, age-encrypted, in a private repo:
+So devkit syncs them itself, encrypted, in a private repo. On a new machine, the whole setup is:
 
 ```bash
+gh auth login
 devkit clone elumixor/puretype   # clone, decrypt secrets, install, terraform init
 ```
+
+`clone` asks for your secrets passphrase the first time, then caches it — you won't be asked again on that machine.
 
 Declare what to sync and what to run:
 
@@ -75,18 +78,18 @@ Declare what to sync and what to run:
 
 `setup` refuses to continue on a blank value. A missing secret that reads as `""` otherwise surfaces much later as an unrelated-looking bug.
 
-### The age identity
+### The passphrase
 
-Encryption uses [age](https://github.com/FiloSottile/age). Your identity lives at `~/.config/age/key.txt` and is **the one thing you must carry to a new machine** — without it the encrypted secrets are unreadable. Back it up somewhere outside the laptop.
+Each project's secrets are packed into one AES-256-GCM bundle (`<project>.enc`) in the secrets repo, encrypted with a key derived from a single passphrase via scrypt. Nothing else is needed to read them — no key file, no keychain, no external binary — so this works on any OS.
 
-First time on a machine:
+- First `secrets push` for a project asks for the passphrase twice, to catch a typo you could never recover from.
+- It's then cached at `~/.config/devkit/passphrase` (mode 600), so you type it once per machine.
+- `DEVKIT_PASSPHRASE` overrides both, for CI.
+- Wrong passphrase fails loudly on GCM's auth tag; it can't silently produce garbage.
 
-```bash
-brew install age gh
-gh auth login
-cp /somewhere/key.txt ~/.config/age/key.txt   # or age-keygen -o ~/.config/age/key.txt
-devkit clone <owner/repo>
-```
+**Keep the passphrase in your password manager.** It is the only thing standing between a fresh laptop and your secrets, and the only thing that can't be recovered if lost.
+
+Changed a `.env`? Run `devkit secrets push`, or the next machine gets a stale copy.
 
 ## Bins
 
