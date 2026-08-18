@@ -61,8 +61,12 @@ export interface SetupConfig {
 export interface DeployTarget {
   /** Display name, and the name used on the command line and in `needs`. */
   name: string;
-  /** Shell command that performs this deploy. */
-  command: string;
+  /** Shell command that performs this deploy. Omit when `type` names a built-in target instead. */
+  command?: string;
+  /** A built-in deploy target — see `src/deploy-targets/`. `options` is that target's own config. */
+  type?: "vercel" | "tauri-macos" | "fastlane-ios";
+  // biome-ignore lint/suspicious/noExplicitAny: each `type` has its own options shape
+  options?: any;
   /** Targets that must finish first. */
   needs?: string[];
   /** Colour for this target's line on the board. */

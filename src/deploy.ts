@@ -27,7 +27,7 @@ type Status = "waiting" | "running" | "done" | "failed" | "skipped";
 
 /** One target's progress, and everything the board needs to draw its line. */
 interface Job {
-  target: DeployTarget;
+  target: DeployTarget & { command: string };
   label: string;
   color: string;
   status: Status;
@@ -59,6 +59,7 @@ export async function runDeploy(only: string[], options: { dry?: boolean; verbos
   for (const target of deploy) {
     const missing = (target.needs ?? []).filter((need) => !deploy.some((other) => other.name === need));
     if (missing.length) throw new Error(`${target.name} needs unknown target${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
+    if (!target.command && !target.type) throw new Error(`${target.name} needs a "command" or a "type"`);
   }
 
   const jobs = selected(deploy, only).map(toJob);
@@ -112,8 +113,11 @@ function selected(targets: DeployTarget[], only: string[]) {
 }
 
 function toJob(target: DeployTarget, index: number): Job {
+  // A built-in target has no shell command of its own — it runs through `devkit _deploy-target`,
+  // which looks its options back up from this same config by name.
+  const command = target.command ?? `devkit _deploy-target ${JSON.stringify(target.name)}`;
   return {
-    target,
+    target: { ...target, command },
     label: target.name,
     color: target.color ?? (PALETTE[index % PALETTE.length] as string),
     status: "waiting",

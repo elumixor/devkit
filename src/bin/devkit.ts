@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
+import { loadConfig } from "../config.ts";
 import { runDeploy } from "../deploy.ts";
+import { deployFastlaneIos } from "../deploy-targets/fastlane-ios.ts";
+import { deployTauriMacos } from "../deploy-targets/tauri-macos.ts";
+import { deployVercel } from "../deploy-targets/vercel.ts";
 import { runDev } from "../dev.ts";
 import { runSetup } from "../setup.ts";
 import { runClone } from "../clone.ts";
@@ -62,6 +66,19 @@ try {
     }
     case "deploy": {
       await runDeploy(rest, { dry: values.dry, verbose: values.verbose });
+      break;
+    }
+    // Internal: how a built-in `type`d deploy target actually runs — spawned as its own process
+    // by `runDeploy` so it gets the same line-capture and log file as a hand-written `command`.
+    case "_deploy-target": {
+      const [name] = rest;
+      const { deploy } = loadConfig();
+      const target = deploy?.find((t) => t.name === name);
+      if (!target?.type) throw new Error(`No deploy target ${name} with a "type"`);
+      if (target.type === "vercel") await deployVercel(target.options);
+      else if (target.type === "tauri-macos") await deployTauriMacos(target.options);
+      else if (target.type === "fastlane-ios") await deployFastlaneIos(target.options);
+      else throw new Error(`Unknown deploy target type: ${target.type}`);
       break;
     }
     case "secrets": {
