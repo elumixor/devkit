@@ -53,9 +53,26 @@ export interface SetupConfig {
   steps?: string[];
 }
 
+/**
+ * One deploy step. Targets with no `needs` all start at once; a target with `needs` waits for
+ * those, which is what lets a build that another one packages up run first without serialising
+ * the whole release.
+ */
+export interface DeployTarget {
+  /** Display name, and the name used on the command line and in `needs`. */
+  name: string;
+  /** Shell command that performs this deploy. */
+  command: string;
+  /** Targets that must finish first. */
+  needs?: string[];
+  /** Colour for this target's line on the board. */
+  color?: string;
+}
+
 export interface DevkitConfig {
   apps: DevApp[];
   setup?: SetupConfig;
+  deploy?: DeployTarget[];
 }
 
 /** Read the `devkit` config from the nearest package.json. */
@@ -63,8 +80,8 @@ export function loadConfig(dir: string = process.cwd()): DevkitConfig {
   const pkgPath = resolve(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { devkit?: DevkitConfig };
   const cfg = pkg.devkit;
-  if (!cfg?.apps?.length) {
-    throw new Error(`No "devkit.apps" found in ${pkgPath}`);
-  }
+  // `devkit deploy` is useful in a repo that runs nothing locally, so only the dev command
+  // insists on apps — see {@link requireApps}.
+  if (!cfg) throw new Error(`No "devkit" config found in ${pkgPath}`);
   return cfg;
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
+import { runDeploy } from "../deploy.ts";
 import { runDev } from "../dev.ts";
 import { runSetup } from "../setup.ts";
 import { runClone } from "../clone.ts";
@@ -11,6 +12,7 @@ const { values, positionals } = parseArgs({
   options: {
     open: { type: "boolean", default: false },
     dry: { type: "boolean", default: false },
+    verbose: { type: "boolean", default: false },
     version: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
@@ -25,11 +27,13 @@ if (values.version) {
 const usage = `usage: devkit [root] [--open] [--dry]      run the dev processes (default)
        devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
        devkit setup [root] [--dry]         validate secrets, install, terraform init, run steps
+       devkit deploy [targets...]          run the configured deploys, in parallel
        devkit secrets push|pull [root]     sync age-encrypted secrets
 
   root      path to the folder holding the devkit config (default: cwd)
   --open    open each app's URL in the browser once its port is live
   --dry     print what would run without running it
+  --verbose stream every line instead of drawing the live board (deploy)
   --version print the devkit version`;
 
 if (values.help) {
@@ -54,6 +58,10 @@ try {
     case "setup": {
       chdirTo(rest[0]);
       await runSetup(values.dry);
+      break;
+    }
+    case "deploy": {
+      await runDeploy(rest, { dry: values.dry, verbose: values.verbose });
       break;
     }
     case "secrets": {

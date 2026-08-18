@@ -40,6 +40,46 @@ Each app runs `bun --filter <name> dev` by default. Override with:
 | `color`   | prefix color (blue, magenta, green, yellow, cyan, red)            |
 | `open`    | with `--open`, open this app's URL when its port comes up         |
 
+## Deploy
+
+`devkit deploy` runs the release steps of a repo the same way `devkit` runs its dev processes:
+side by side, with one line each.
+
+```jsonc
+{
+  "scripts": { "deploy": "devkit deploy" },
+  "devkit": {
+    "deploy": [
+      { "name": "desktop", "command": "bun scripts/deploy-desktop.ts", "color": "yellow" },
+      { "name": "vercel", "command": "bun scripts/deploy-vercel.ts", "needs": ["desktop"] },
+      { "name": "ios", "command": "bun scripts/deploy-ios.ts" }
+    ]
+  }
+}
+```
+
+```bash
+bun run deploy            # every target
+bun run deploy ios        # one target, plus whatever it needs
+devkit deploy --dry       # print the plan
+devkit deploy --verbose   # stream every line instead of the live board
+```
+
+Targets with no `needs` start together; one with `needs` waits for those, so a build that another
+target packages up can run first without serialising the whole release.
+
+Each target shows a spinner, how long it has been running and the last line it printed. The full
+output goes to `.devkit/deploy/<name>.log`, and the tail of whichever target failed is printed at
+the end — a release prints tens of thousands of lines, and interleaving all of them is unreadable.
+Piped output (CI, a log file) gets prefixed streaming lines instead of the board.
+
+| field     | meaning                                            |
+| --------- | -------------------------------------------------- |
+| `name`    | display name, and how it's named on the command line |
+| `command` | shell command that performs this deploy             |
+| `needs`   | targets that must finish first                      |
+| `color`   | colour of this target's line                        |
+
 ## Setting up a machine
 
 A repo usually needs a couple of gitignored files before it will run — `.env`, `infra/terraform.tfvars` — and those cannot be fetched back from a host. Vercel, for one, stores Terraform-managed variables write-only and hands them back from `vercel env pull` as *empty strings*, which looks like it worked and quietly leaves you with a `.env` full of blanks.

@@ -20,6 +20,7 @@ function labelFor(app: DevApp, index: number): string {
 /** Free ports, print URLs, run every app side-by-side, optionally open the browser. */
 export async function runDev(open: boolean, dry = false): Promise<void> {
   const { apps } = loadConfig();
+  if (!apps?.length) throw new Error('No "devkit.apps" to run');
   const withPort = apps.filter((app) => app.port != null);
 
   if (dry) {
