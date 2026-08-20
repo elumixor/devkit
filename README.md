@@ -19,25 +19,24 @@ Add a `devkit` block to your root `package.json`:
     "dev:open": "devkit --open"
   },
   "devkit": {
-    "apps": [
-      { "name": "backend", "port": 10000, "color": "blue" },
-      { "name": "frontend", "port": 3000, "color": "magenta", "open": true }
-    ]
+    "apps": {
+      "backend": { "port": 10000 },
+      "frontend": { "port": 3000, "open": true }
+    }
   }
 }
 ```
 
-Each app runs `bun --filter <name> dev` by default. Override with:
+Each app is keyed by its name, and runs `bun --filter <name> dev` by default. Override with:
 
 | field     | meaning                                                            |
 | --------- | ----------------------------------------------------------------- |
-| `name`    | display label + default `bun --filter` target                     |
-| `filter`  | explicit `bun --filter <target>` (defaults to `name`)             |
+| `filter`  | explicit `bun --filter <target>` (defaults to the name)           |
 | `cwd`     | run `bun --cwd <cwd> run <script>` instead of `--filter`          |
 | `script`  | script to run in the workspace (default `dev`)                    |
 | `command` | raw shell command, overrides the above (e.g. `vite dev`)          |
 | `port`    | freed on start and shown in the URL banner                        |
-| `color`   | prefix color (blue, magenta, green, yellow, cyan, red)            |
+| `color`   | prefix color (blue, magenta, green, yellow, cyan, red); one is picked for you otherwise |
 | `open`    | with `--open`, open this app's URL when its port comes up         |
 
 ## Deploy
@@ -49,11 +48,11 @@ side by side, with one line each.
 {
   "scripts": { "deploy": "devkit deploy" },
   "devkit": {
-    "deploy": [
-      { "name": "desktop", "command": "bun scripts/deploy-desktop.ts", "color": "yellow" },
-      { "name": "vercel", "command": "bun scripts/deploy-vercel.ts", "needs": ["desktop"] },
-      { "name": "ios", "command": "bun scripts/deploy-ios.ts" }
-    ]
+    "deploy": {
+      "desktop": { "command": "bun scripts/deploy-desktop.ts" },
+      "vercel": { "command": "bun scripts/deploy-vercel.ts", "needs": ["desktop"] },
+      "ios": { "command": "bun scripts/deploy-ios.ts" }
+    }
   }
 }
 ```
@@ -73,12 +72,14 @@ output goes to `.devkit/deploy/<name>.log`, and the tail of whichever target fai
 the end — a release prints tens of thousands of lines, and interleaving all of them is unreadable.
 Piped output (CI, a log file) gets prefixed streaming lines instead of the board.
 
+Each target is keyed by its name — that is what the board shows, what `needs` points at, and what
+you type on the command line.
+
 | field     | meaning                                            |
 | --------- | -------------------------------------------------- |
-| `name`    | display name, and how it's named on the command line |
 | `command` | shell command that performs this deploy             |
 | `needs`   | targets that must finish first                      |
-| `color`   | colour of this target's line                        |
+| `color`   | colour of this target's line; one is picked for you otherwise |
 
 ## Setting up a machine
 
@@ -97,7 +98,7 @@ Declare what to sync and what to run:
 
 ```jsonc
 "devkit": {
-  "apps": [ /* ... */ ],
+  "apps": { /* ... */ },
   "setup": {
     "secrets": [".env", "infra/terraform.tfvars"],
     "env": [{ "file": ".env", "example": ".env.example" }],

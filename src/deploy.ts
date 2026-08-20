@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type DeployTarget, loadConfig } from "./config.ts";
+import { type DeployTarget, loadConfig, type Named } from "./config.ts";
 
 const PALETTE: readonly string[] = ["magenta", "cyan", "yellow", "green", "blue", "red"];
 const COLORS: Record<string, string> = {
@@ -27,7 +27,7 @@ type Status = "waiting" | "running" | "done" | "failed" | "skipped";
 
 /** One target's progress, and everything the board needs to draw its line. */
 interface Job {
-  target: DeployTarget & { command: string };
+  target: Named<DeployTarget> & { command: string };
   label: string;
   color: string;
   status: Status;
@@ -49,7 +49,7 @@ interface Job {
  */
 export async function runDeploy(only: string[], options: { dry?: boolean; verbose?: boolean } = {}) {
   const { deploy } = loadConfig();
-  if (!deploy?.length) throw new Error('No "devkit.deploy" targets in package.json');
+  if (!deploy.length) throw new Error('No "devkit.deploy" targets in package.json');
 
   const unknown = only.filter((name) => !deploy.some((target) => target.name === name));
   if (unknown.length) {
@@ -93,7 +93,7 @@ export async function runDeploy(only: string[], options: { dry?: boolean; verbos
 }
 
 /** The targets asked for, plus whatever they depend on — a target can't run without its needs. */
-function selected(targets: DeployTarget[], only: string[]) {
+function selected(targets: Named<DeployTarget>[], only: string[]) {
   if (!only.length) return targets;
   const wanted = new Set(only);
   let grew = true;
@@ -112,7 +112,7 @@ function selected(targets: DeployTarget[], only: string[]) {
   return targets.filter((target) => wanted.has(target.name));
 }
 
-function toJob(target: DeployTarget, index: number): Job {
+function toJob(target: Named<DeployTarget>, index: number): Job {
   // A built-in target has no shell command of its own — it runs through `devkit _deploy-target`,
   // which looks its options back up from this same config by name.
   const command = target.command ?? `devkit _deploy-target ${JSON.stringify(target.name)}`;

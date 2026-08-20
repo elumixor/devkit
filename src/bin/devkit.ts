@@ -73,7 +73,7 @@ try {
     case "_deploy-target": {
       const [name] = rest;
       const { deploy } = loadConfig();
-      const target = deploy?.find((t) => t.name === name);
+      const target = deploy.find((t) => t.name === name);
       if (!target?.type) throw new Error(`No deploy target ${name} with a "type"`);
       if (target.type === "vercel") await deployVercel(target.options);
       else if (target.type === "tauri-macos") await deployTauriMacos(target.options);
