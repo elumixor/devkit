@@ -1,20 +1,26 @@
 #!/usr/bin/env bun
-import { parseArgs } from "node:util";
 import { resolve } from "node:path";
+import { parseArgs } from "node:util";
+import pkg from "../../package.json" with { type: "json" };
+import { runBuild } from "../build.ts";
+import { runClone } from "../clone.ts";
 import { loadConfig } from "../config.ts";
 import { runDeploy } from "../deploy.ts";
 import { deployFastlaneIos } from "../deploy-targets/fastlane-ios.ts";
 import { deployTauriMacos } from "../deploy-targets/tauri-macos.ts";
 import { deployVercel } from "../deploy-targets/vercel.ts";
 import { runDev } from "../dev.ts";
-import { runSetup } from "../setup.ts";
-import { runClone } from "../clone.ts";
+import { runRelease } from "../release.ts";
 import { pullSecrets, pushSecrets } from "../secrets.ts";
-import pkg from "../../package.json" with { type: "json" };
+import { runSetup } from "../setup.ts";
+import { runSim } from "../sim.ts";
+import { runVersion } from "../version.ts";
 
 const { values, positionals } = parseArgs({
   options: {
     open: { type: "boolean", default: false },
+    real: { type: "boolean", default: false },
+    device: { type: "string" },
     dry: { type: "boolean", default: false },
     verbose: { type: "boolean", default: false },
     version: { type: "boolean", short: "v", default: false },
@@ -32,12 +38,18 @@ const usage = `usage: devkit [root] [--open] [--dry]      run the dev processes 
        devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
        devkit setup [root] [--dry]         validate secrets, install, terraform init, run steps
        devkit deploy [targets...]          run the configured deploys, in parallel
+       devkit build                        build the web app and the API into one Vercel output
+       devkit sim [--real] [--device n]    build and launch the app on a simulator
+       devkit version                      write the source version into every file that declares one
+       devkit release <prefix>             tag this commit <prefix>-v<timestamp> and push it
        devkit secrets push|pull [root]     sync age-encrypted secrets
 
   root      path to the folder holding the devkit config (default: cwd)
   --open    open each app's URL in the browser once its port is live
   --dry     print what would run without running it
   --verbose stream every line instead of drawing the live board (deploy)
+  --real    run the simulator build against the real API instead of sample data
+  --device  simulator to run on, overriding the configured one
   --version print the devkit version`;
 
 if (values.help) {
@@ -62,6 +74,22 @@ try {
     case "setup": {
       chdirTo(rest[0]);
       await runSetup(values.dry);
+      break;
+    }
+    case "build": {
+      await runBuild();
+      break;
+    }
+    case "sim": {
+      await runSim({ real: values.real, device: values.device });
+      break;
+    }
+    case "version": {
+      await runVersion();
+      break;
+    }
+    case "release": {
+      await runRelease(rest[0] ?? "");
       break;
     }
     case "deploy": {

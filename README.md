@@ -81,6 +81,80 @@ you type on the command line.
 | `needs`   | targets that must finish first                      |
 | `color`   | colour of this target's line; one is picked for you otherwise |
 
+## Build
+
+`devkit build` packs a client-rendered web app and a Nitro API into one Vercel deployment: the app
+as static files, the API as the one serverless function behind them. Same origin, so the web client
+calls the API without CORS.
+
+```jsonc
+"devkit": {
+  "build": {
+    "frontendDir": "apps/frontend",
+    "backendDir": "apps/backend",
+    "apiPrefixes": ["mobile", "health"],
+    "clientCommand": "bunx nitro-client",
+    "include": { "dist/download": "download" }
+  }
+}
+```
+
+| key             | meaning                                                                        |
+| --------------- | ------------------------------------------------------------------------------ |
+| `frontendDir`   | web app dir, run with `bun run build` (default `apps/frontend`)                 |
+| `backendDir`    | Nitro dir (default `apps/backend`)                                              |
+| `webBuildDir`   | where the web build lands inside `frontendDir` (default `build`)                |
+| `apiPrefixes`   | paths the API owns; every other path answers with the app shell                 |
+| `clientCommand` | run in `backendDir` first, unless `SKIP_CLIENT_GEN` is set                      |
+| `include`       | staged dirs to serve alongside the web files, as `{ "<source>": "<url path>" }` |
+
+## Versions
+
+`devkit version` reads one version and writes it into every other file that declares one, so the
+App Store, the installer and the number at the bottom of settings can't drift apart.
+
+```jsonc
+"devkit": {
+  "version": {
+    "source": "apps/frontend/src-tauri/tauri.conf.json",
+    "packages": ["package.json", "apps/frontend/package.json"],
+    "cargo": ["apps/frontend/src-tauri/Cargo.toml"],
+    "xcodeProjects": ["apps/frontend/ios/App/App.xcodeproj/project.pbxproj"],
+    "marketingVersionPlists": ["apps/frontend/ios/App/App/Info.plist"],
+    "plists": ["apps/frontend/ios/App/WatchApp/Info.plist"]
+  }
+}
+```
+
+Targets in an Xcode project read `$(MARKETING_VERSION)` from the project, so their plists are
+pointed at it rather than at a number — `plists` is for targets wired in by a script, which have no
+such setting and carry the number themselves.
+
+`devkit release <prefix>` tags the current commit `<prefix>-v<timestamp>` and pushes the tag, which
+is how a CI release is asked for.
+
+## Simulator
+
+`devkit sim` builds an Apple target and launches it on a simulator without opening Xcode. A watch
+app has no sign-in of its own, so `previewEnv` is what lets it run on a simulator with no paired
+phone; `--real` leaves it unset and talks to the real API.
+
+```jsonc
+"devkit": {
+  "sim": {
+    "project": "apps/frontend/ios/App/App.xcodeproj",
+    "scheme": "BalanceWatch",
+    "bundleId": "com.example.app.watchkitapp",
+    "device": "Apple Watch Series 11 (46mm)",
+    "previewEnv": "BALANCE_WATCH_PREVIEW"
+  }
+}
+```
+
+`--device`, or `DEVKIT_SIM_DEVICE`, overrides the configured simulator — everyone's list of
+installed ones differs. `sdk` (default `watchsimulator`) and `derivedDataDir` (default `build/sim`)
+are there for a phone target.
+
 ## Setting up a machine
 
 A repo usually needs a couple of gitignored files before it will run — `.env`, `infra/terraform.tfvars` — and those cannot be fetched back from a host. Vercel, for one, stores Terraform-managed variables write-only and hands them back from `vercel env pull` as *empty strings*, which looks like it worked and quietly leaves you with a `.env` full of blanks.
@@ -137,5 +211,10 @@ Changed a `.env`? Run `devkit secrets push`, or the next machine gets a stale co
 - `devkit [root] [--open] [--dry] [--version]` — the orchestrator above. `root` is an optional path to the folder holding the `devkit` config (defaults to the current directory); `--dry` prints the resolved commands and URLs without running anything.
 - `devkit clone <owner/repo> [dir]` — clone, decrypt secrets, run setup.
 - `devkit setup [root] [--dry]` — validate secrets, install, `terraform init`, run steps.
+- `devkit deploy [targets...] [--dry] [--verbose]` — run the release targets, in parallel.
+- `devkit build` — build the web app and the API into one Vercel output.
+- `devkit sim [--real] [--device <name>]` — build and launch the app on a simulator.
+- `devkit version` — write the source version into every file that declares one.
+- `devkit release <prefix>` — tag this commit `<prefix>-v<timestamp>` and push it.
 - `devkit secrets push|pull [root]` — sync the encrypted secrets.
 - `free-port <port>` — kill whatever is listening on a port (handy in a `predev`).

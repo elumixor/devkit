@@ -69,11 +69,66 @@ export interface DeployTarget {
   color?: string;
 }
 
+/**
+ * `devkit build`: a client-rendered web app and a Nitro API packed into one Vercel deployment.
+ */
+export interface BuildConfig {
+  /** Web app dir, run with `bun run build` (default `apps/frontend`). */
+  frontendDir?: string;
+  /** Nitro dir, built with `bunx nitro build --preset vercel` (default `apps/backend`). */
+  backendDir?: string;
+  /** Where the web build lands inside `frontendDir` (default `build`). */
+  webBuildDir?: string;
+  /** Path prefixes the API owns; everything else answers with the app shell. */
+  apiPrefixes: string[];
+  /** Run in `backendDir` before the web build, unless `SKIP_CLIENT_GEN` is set (e.g. `bunx nitro-client`). */
+  clientCommand?: string;
+  /** Extra staged directories to serve, as `{ "<source dir>": "<path under the site>" }`. */
+  include?: Record<string, string>;
+}
+
+/** `devkit sim`: an Apple app built and launched on a simulator, without opening Xcode. */
+export interface SimConfig {
+  /** Path to the `.xcodeproj`. */
+  project: string;
+  /** Scheme to build; also the name of the built `.app`. */
+  scheme: string;
+  /** Bundle id to install and launch. */
+  bundleId: string;
+  /** Simulator to run on — overridable with `--device` or `DEVKIT_SIM_DEVICE`. */
+  device: string;
+  /** Simulator SDK the products are built for (default `watchsimulator`). */
+  sdk?: string;
+  /** Derived data dir (default `build/sim`). */
+  derivedDataDir?: string;
+  /** Env var the app reads to show sample data; set unless `--real` is passed. */
+  previewEnv?: string;
+}
+
+/** `devkit version`: one version, declared once and written everywhere else it appears. */
+export interface VersionConfig {
+  /** JSON file whose `version` field is the number the rest follow. */
+  source: string;
+  /** `package.json`-shaped files. */
+  packages?: string[];
+  /** `Cargo.toml` files. */
+  cargo?: string[];
+  /** `project.pbxproj` files, whose `MARKETING_VERSION` every target's plist reads. */
+  xcodeProjects?: string[];
+  /** Plists of targets in those projects — pointed at `$(MARKETING_VERSION)` rather than a number. */
+  marketingVersionPlists?: string[];
+  /** Plists of targets with no project setting of their own, which carry the number itself. */
+  plists?: string[];
+}
+
 /** Apps and deploy targets are written as name-keyed maps, so a name is never repeated or missing. */
 export interface DevkitConfig {
   apps?: Record<string, DevApp>;
   setup?: SetupConfig;
   deploy?: Record<string, DeployTarget>;
+  build?: BuildConfig;
+  sim?: SimConfig;
+  version?: VersionConfig;
 }
 
 /** A config entry with its map key attached — the name every command prints and refers to. */
@@ -84,6 +139,9 @@ export interface LoadedConfig {
   apps: Named<DevApp>[];
   setup?: SetupConfig;
   deploy: Named<DeployTarget>[];
+  build?: BuildConfig;
+  sim?: SimConfig;
+  version?: VersionConfig;
 }
 
 /** Read the `devkit` config from the nearest package.json. */
@@ -98,6 +156,9 @@ export function loadConfig(dir: string = process.cwd()): LoadedConfig {
     apps: named(cfg.apps, "apps", pkgPath),
     setup: cfg.setup,
     deploy: named(cfg.deploy, "deploy", pkgPath),
+    build: cfg.build,
+    sim: cfg.sim,
+    version: cfg.version,
   };
 }
 

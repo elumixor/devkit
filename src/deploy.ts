@@ -58,7 +58,8 @@ export async function runDeploy(only: string[], options: { dry?: boolean; verbos
 
   for (const target of deploy) {
     const missing = (target.needs ?? []).filter((need) => !deploy.some((other) => other.name === need));
-    if (missing.length) throw new Error(`${target.name} needs unknown target${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
+    if (missing.length)
+      throw new Error(`${target.name} needs unknown target${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
     if (!target.command && !target.type) throw new Error(`${target.name} needs a "command" or a "type"`);
   }
 
@@ -69,7 +70,10 @@ export async function runDeploy(only: string[], options: { dry?: boolean; verbos
   mkdirSync(logDir, { recursive: true });
 
   const live = Boolean(process.stdout.isTTY) && !options.verbose;
-  console.log(bold(`\ndeploying ${jobs.map((job) => job.label).join(", ")}`) + dim(live ? `  ·  logs in ${"./.devkit/deploy"}` : ""));
+  console.log(
+    bold(`\ndeploying ${jobs.map((job) => job.label).join(", ")}`) +
+      dim(live ? `  ·  logs in ${"./.devkit/deploy"}` : ""),
+  );
   console.log();
   const board = live ? startBoard(jobs) : null;
 
