@@ -41,8 +41,11 @@ export async function xcodeBuild(options: XcodeBuild & { destination?: string })
   const derived = resolve(root, options.derivedDataDir ?? `build/${options.scheme}`);
   const destination = options.destination ?? `generic/platform=${sdk === "watchsimulator" ? "watchOS" : "iOS"} Simulator`;
 
+  // The destination says which SDK each target compiles against, and `-sdk` would override that
+  // for all of them at once — which is how an iPhone build of a project that embeds a watch app
+  // ends up compiling the watch widget for iOS and failing on its deployment target.
   await $`xcodebuild -project ${project} -scheme ${options.scheme} -configuration ${configuration} \
-    -sdk ${sdk} -destination ${destination} -derivedDataPath ${derived} \
+    -destination ${destination} -derivedDataPath ${derived} \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build`;
 }
 
