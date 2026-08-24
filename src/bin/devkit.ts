@@ -4,16 +4,13 @@ import { parseArgs } from "node:util";
 import pkg from "../../package.json" with { type: "json" };
 import { runBuild } from "../build.ts";
 import { runClone } from "../clone.ts";
-import { loadConfig } from "../config.ts";
+import { PHASES, type Phase } from "../config.ts";
 import { runDeploy } from "../deploy.ts";
-import { deployFastlaneIos } from "../deploy-targets/fastlane-ios.ts";
-import { deployTauriMacos } from "../deploy-targets/tauri-macos.ts";
-import { deployVercel } from "../deploy-targets/vercel.ts";
 import { runDev } from "../dev.ts";
 import { runRelease } from "../release.ts";
+import { runTarget } from "../run-target.ts";
 import { pullSecrets, pushSecrets } from "../secrets.ts";
 import { runSetup } from "../setup.ts";
-import { runSim } from "../sim.ts";
 import { runVersion } from "../version.ts";
 
 const { values, positionals } = parseArgs({
@@ -34,21 +31,25 @@ if (values.version) {
   process.exit(0);
 }
 
-const usage = `usage: devkit [root] [--open] [--dry]      run the dev processes (default)
-       devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
+const usage = `usage: devkit dev [platforms...]           run the dev processes (default)
+       devkit dev:<platform>               run one platform, and whatever it needs
+       devkit build [platforms...]         build every platform, in parallel
+       devkit build:<platform>             build one platform
+       devkit deploy [platforms...]        deploy every platform, in dependency order
+       devkit deploy:<platform>            deploy one platform
        devkit setup [root] [--dry]         validate secrets, install, terraform init, run steps
-       devkit deploy [targets...]          run the configured deploys, in parallel
-       devkit build                        build the web app and the API into one Vercel output
-       devkit sim [--real] [--device n]    build and launch the app on a simulator
+       devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
        devkit version                      write the source version into every file that declares one
        devkit release <prefix>             tag this commit <prefix>-v<timestamp> and push it
        devkit secrets push|pull [root]     sync age-encrypted secrets
 
-  root      path to the folder holding the devkit config (default: cwd)
-  --open    open each app's URL in the browser once its port is live
+  Platforms are whatever "devkit.dev", "devkit.build" and "devkit.deploy" name in package.json —
+  typically web, mac, iphone, iwatch. Naming one also runs the platforms it declares in "needs".
+
+  --open    open each dev process's URL in the browser once its port is live
   --dry     print what would run without running it
-  --verbose stream every line instead of drawing the live board (deploy)
-  --real    run the simulator build against the real API instead of sample data
+  --verbose stream every line instead of drawing the live board (build, deploy)
+  --real    run a simulator against the real API instead of sample data
   --device  simulator to run on, overriding the configured one
   --version print the devkit version`;
 
@@ -57,7 +58,15 @@ if (values.help) {
   process.exit(0);
 }
 
-const [command, ...rest] = positionals;
+const [head, ...rest] = positionals;
+// `devkit build:mac` and `devkit build mac` are the same thing — a colon is what a package.json
+// script reads best, a positional is what a shell completes best.
+const [command, suffix] = (head ?? "dev").split(":");
+const platforms = [...(suffix ? [suffix] : []), ...(isPhase(command) ? rest : [])];
+
+function isPhase(name: string | undefined): name is Phase {
+  return PHASES.includes(name as Phase);
+}
 
 function chdirTo(dir?: string) {
   if (dir) process.chdir(resolve(dir));
@@ -65,6 +74,26 @@ function chdirTo(dir?: string) {
 
 try {
   switch (command) {
+    case "dev": {
+      await runDev(platforms, { open: values.open, dry: values.dry });
+      break;
+    }
+    case "build": {
+      await runBuild(platforms, { dry: values.dry, verbose: values.verbose });
+      break;
+    }
+    case "deploy": {
+      await runDeploy(platforms, { dry: values.dry, verbose: values.verbose });
+      break;
+    }
+    // Internal: how a `type`d step actually runs — spawned as its own process by the graph (or by
+    // `concurrently`, for dev) so it gets that step's own line on the board and its own log file.
+    case "_run": {
+      const [phase, name] = rest;
+      if (!isPhase(phase) || !name) throw new Error("usage: devkit _run <phase> <platform>");
+      await runTarget(phase, name, { real: values.real, device: values.device });
+      break;
+    }
     case "clone": {
       const [repo, dir] = rest;
       if (!repo) throw new Error("usage: devkit clone <owner/repo> [dir]");
@@ -76,37 +105,12 @@ try {
       await runSetup(values.dry);
       break;
     }
-    case "build": {
-      await runBuild();
-      break;
-    }
-    case "sim": {
-      await runSim({ real: values.real, device: values.device });
-      break;
-    }
     case "version": {
       await runVersion();
       break;
     }
     case "release": {
       await runRelease(rest[0] ?? "");
-      break;
-    }
-    case "deploy": {
-      await runDeploy(rest, { dry: values.dry, verbose: values.verbose });
-      break;
-    }
-    // Internal: how a built-in `type`d deploy target actually runs — spawned as its own process
-    // by `runDeploy` so it gets the same line-capture and log file as a hand-written `command`.
-    case "_deploy-target": {
-      const [name] = rest;
-      const { deploy } = loadConfig();
-      const target = deploy.find((t) => t.name === name);
-      if (!target?.type) throw new Error(`No deploy target ${name} with a "type"`);
-      if (target.type === "vercel") await deployVercel(target.options);
-      else if (target.type === "tauri-macos") await deployTauriMacos(target.options);
-      else if (target.type === "fastlane-ios") await deployFastlaneIos(target.options);
-      else throw new Error(`Unknown deploy target type: ${target.type}`);
       break;
     }
     case "secrets": {
@@ -117,11 +121,8 @@ try {
       else throw new Error("usage: devkit secrets push|pull [root]");
       break;
     }
-    default: {
-      // No subcommand — the original `devkit [root]` behaviour.
-      chdirTo(command);
-      await runDev(values.open, values.dry);
-    }
+    default:
+      throw new Error(`Unknown command "${head}"\n\n${usage}`);
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

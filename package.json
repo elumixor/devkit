@@ -20,6 +20,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src",
+    "release": "npm version patch -m \"Release v%s\" && git push --follow-tags",
     "release:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
     "release:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
     "release:major": "npm version major -m \"Release v%s\" && git push --follow-tags"

@@ -1,22 +1,59 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-/** One dev process, keyed by its name. Resolved into a shell command by {@link commandFor}. */
-export interface DevApp {
-  /** Explicit `bun --filter <target>` (defaults to the name). */
+/**
+ * The three things a repo does with its platforms, and the three commands that do them.
+ *
+ * Every phase is the same shape — a map of platform name to one step — so `devkit build` and
+ * `devkit build:mac` are the same command with a different selection, and a platform is named
+ * once and means the same thing everywhere.
+ */
+export type Phase = "dev" | "build" | "deploy";
+
+export const PHASES: readonly Phase[] = ["dev", "build", "deploy"];
+
+/** One step of a phase: a shell command, or a built-in target named by `type`. */
+export interface Step {
+  /** Shell command that performs this step. Omit when `type` names a built-in target instead. */
+  command?: string;
+  /** A built-in target — see `src/<phase>-targets/`. `options` is that target's own config. */
+  type?: string;
+  // biome-ignore lint/suspicious/noExplicitAny: each `type` has its own options shape
+  options?: any;
+  /** Platforms that must run first — built before this one, or already up in the dev case. */
+  needs?: string[];
+  /** Colour for this step's line on the board. */
+  color?: string;
+}
+
+/** One long-running dev process. Resolved into a shell command by `commandFor` in `dev.ts`. */
+export interface DevProcess extends Step {
+  /** Explicit `bun --filter <target>` (defaults to the process name). */
   filter?: string;
-  /** Run via `bun --cwd <cwd> run <script>` instead of `--filter`. */
+  /** Run via `bun run --cwd <cwd> <script>` instead of `--filter`. */
   cwd?: string;
   /** Script to run in the workspace (default `dev`). */
   script?: string;
-  /** Raw shell command; overrides filter/cwd/script (e.g. `vite dev`). */
-  command?: string;
   /** Port to free on start and show in the URL banner. */
   port?: number;
-  /** Prefix color for this process's output. */
-  color?: string;
-  /** With `--open`, open this app's URL once its port is live. */
+  /** With `--open`, open this process's URL once its port is live. */
   open?: boolean;
+}
+
+/**
+ * One platform's dev setup: either a single process, or several under `processes` — a web
+ * platform is a client and an API, and neither is worth naming as a platform of its own.
+ */
+export interface DevPlatform extends DevProcess {
+  processes?: Record<string, DevProcess>;
+}
+
+/** A command run once before a build or deploy graph, ahead of everything running in parallel. */
+export interface GenerateConfig {
+  /** Shell command to run (e.g. `bunx nitro-client`). */
+  command: string;
+  /** Directory to run it in, relative to the root (default `.`). */
+  cwd?: string;
 }
 
 /** A gitignored env file that must be carried to a new machine, and the template listing its keys. */
@@ -51,60 +88,6 @@ export interface SetupConfig {
   steps?: string[];
 }
 
-/**
- * One deploy step. Targets with no `needs` all start at once; a target with `needs` waits for
- * those, which is what lets a build that another one packages up run first without serialising
- * the whole release.
- */
-export interface DeployTarget {
-  /** Shell command that performs this deploy. Omit when `type` names a built-in target instead. */
-  command?: string;
-  /** A built-in deploy target — see `src/deploy-targets/`. `options` is that target's own config. */
-  type?: "vercel" | "tauri-macos" | "fastlane-ios";
-  // biome-ignore lint/suspicious/noExplicitAny: each `type` has its own options shape
-  options?: any;
-  /** Targets that must finish first. */
-  needs?: string[];
-  /** Colour for this target's line on the board. */
-  color?: string;
-}
-
-/**
- * `devkit build`: a client-rendered web app and a Nitro API packed into one Vercel deployment.
- */
-export interface BuildConfig {
-  /** Web app dir, run with `bun run build` (default `apps/frontend`). */
-  frontendDir?: string;
-  /** Nitro dir, built with `bunx nitro build --preset vercel` (default `apps/backend`). */
-  backendDir?: string;
-  /** Where the web build lands inside `frontendDir` (default `build`). */
-  webBuildDir?: string;
-  /** Path prefixes the API owns; everything else answers with the app shell. */
-  apiPrefixes: string[];
-  /** Run in `backendDir` before the web build, unless `SKIP_CLIENT_GEN` is set (e.g. `bunx nitro-client`). */
-  clientCommand?: string;
-  /** Extra staged directories to serve, as `{ "<source dir>": "<path under the site>" }`. */
-  include?: Record<string, string>;
-}
-
-/** `devkit sim`: an Apple app built and launched on a simulator, without opening Xcode. */
-export interface SimConfig {
-  /** Path to the `.xcodeproj`. */
-  project: string;
-  /** Scheme to build; also the name of the built `.app`. */
-  scheme: string;
-  /** Bundle id to install and launch. */
-  bundleId: string;
-  /** Simulator to run on — overridable with `--device` or `DEVKIT_SIM_DEVICE`. */
-  device: string;
-  /** Simulator SDK the products are built for (default `watchsimulator`). */
-  sdk?: string;
-  /** Derived data dir (default `build/sim`). */
-  derivedDataDir?: string;
-  /** Env var the app reads to show sample data; set unless `--real` is passed. */
-  previewEnv?: string;
-}
-
 /** `devkit version`: one version, declared once and written everywhere else it appears. */
 export interface VersionConfig {
   /** JSON file whose `version` field is the number the rest follow. */
@@ -121,13 +104,13 @@ export interface VersionConfig {
   plists?: string[];
 }
 
-/** Apps and deploy targets are written as name-keyed maps, so a name is never repeated or missing. */
+/** Phases are name-keyed maps, so a platform is never repeated or missing a name. */
 export interface DevkitConfig {
-  apps?: Record<string, DevApp>;
+  dev?: Record<string, DevPlatform>;
+  build?: Record<string, Step>;
+  deploy?: Record<string, Step>;
+  generate?: GenerateConfig;
   setup?: SetupConfig;
-  deploy?: Record<string, DeployTarget>;
-  build?: BuildConfig;
-  sim?: SimConfig;
   version?: VersionConfig;
 }
 
@@ -136,11 +119,11 @@ export type Named<T> = T & { readonly name: string };
 
 /** What the commands read: the same config, with each map flattened into named entries. */
 export interface LoadedConfig {
-  apps: Named<DevApp>[];
+  dev: Named<DevPlatform>[];
+  build: Named<Step>[];
+  deploy: Named<Step>[];
+  generate?: GenerateConfig;
   setup?: SetupConfig;
-  deploy: Named<DeployTarget>[];
-  build?: BuildConfig;
-  sim?: SimConfig;
   version?: VersionConfig;
 }
 
@@ -149,17 +132,22 @@ export function loadConfig(dir: string = process.cwd()): LoadedConfig {
   const pkgPath = resolve(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { devkit?: DevkitConfig };
   const cfg = pkg.devkit;
-  // `devkit deploy` is useful in a repo that runs nothing locally, so only the dev command
-  // insists on apps.
+  // `devkit deploy` is useful in a repo that runs nothing locally, so no phase is required here —
+  // each command says what it needs when it finds nothing to run.
   if (!cfg) throw new Error(`No "devkit" config found in ${pkgPath}`);
   return {
-    apps: named(cfg.apps, "apps", pkgPath),
-    setup: cfg.setup,
+    dev: named(cfg.dev, "dev", pkgPath),
+    build: named(cfg.build, "build", pkgPath),
     deploy: named(cfg.deploy, "deploy", pkgPath),
-    build: cfg.build,
-    sim: cfg.sim,
+    generate: cfg.generate,
+    setup: cfg.setup,
     version: cfg.version,
   };
+}
+
+/** The entries of one phase, in config order. */
+export function phaseOf(config: LoadedConfig, phase: Phase): Named<Step>[] {
+  return phase === "dev" ? config.dev : phase === "build" ? config.build : config.deploy;
 }
 
 function named<T>(map: Record<string, T> | undefined, key: string, pkgPath: string): Named<T>[] {
@@ -167,4 +155,33 @@ function named<T>(map: Record<string, T> | undefined, key: string, pkgPath: stri
   if (Array.isArray(map))
     throw new Error(`"devkit.${key}" in ${pkgPath} is a list — it is now a map of name to settings`);
   return Object.entries(map).map(([name, entry]) => ({ ...entry, name }));
+}
+
+/**
+ * The platforms asked for, plus whatever they depend on — a step can't run without its needs,
+ * and a dev process can't be developed against a stack that isn't up.
+ */
+export function withNeeds<T extends Step>(entries: Named<T>[], only: string[]): Named<T>[] {
+  if (!only.length) return entries;
+  const unknown = only.filter((name) => !entries.some((entry) => entry.name === name));
+  if (unknown.length) {
+    const known = entries.map((entry) => entry.name).join(", ") || "none configured";
+    throw new Error(`Unknown platform${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")} (have: ${known})`);
+  }
+
+  const wanted = new Set(only);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const entry of entries) {
+      if (!wanted.has(entry.name)) continue;
+      for (const need of entry.needs ?? []) {
+        if (!wanted.has(need)) {
+          wanted.add(need);
+          grew = true;
+        }
+      }
+    }
+  }
+  return entries.filter((entry) => wanted.has(entry.name));
 }
