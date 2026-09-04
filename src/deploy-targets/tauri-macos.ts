@@ -11,6 +11,8 @@ export interface TauriMacosTargetOptions {
   stageDir?: string;
   /** Reinstall to `/Applications/<name>.app` after building, if it's already there (default true). */
   installIfPresent?: boolean;
+  /** Open the reinstalled app once it's in place, so the deploy ends on the new build running (default true). */
+  relaunch?: boolean;
   /** App Store Connect key env vars, for notarization (defaults match the iOS release). */
   keyIdEnv?: string;
   issuerIdEnv?: string;
@@ -98,6 +100,12 @@ export async function deployTauriMacos(options: TauriMacosTargetOptions = {}) {
     await $`cp -R ${appBundle} ${installed}`;
     await $`xattr -cr ${installed}`.nothrow().quiet();
     console.log(`Reinstalled ${installed}`);
+    // The old copy was quit to make room; leaving the new one closed reads as "nothing happened",
+    // and the DMG gets dragged into /Applications by hand over a build that is already there.
+    if (options.relaunch ?? true) {
+      await $`open ${installed}`.nothrow();
+      console.log(`Opened ${installed}`);
+    }
   }
 
   /** Sends the disk image to Apple and staples their answer into it, so it opens offline too. */
