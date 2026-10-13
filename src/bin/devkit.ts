@@ -11,6 +11,7 @@ import { runRelease } from "../release.ts";
 import { runTarget } from "../run-target.ts";
 import { pullSecrets, pushSecrets } from "../secrets.ts";
 import { runSetup } from "../setup.ts";
+import { runUpdate } from "../update.ts";
 import { runVersion } from "../version.ts";
 
 const { values, positionals } = parseArgs({
@@ -43,6 +44,7 @@ const usage = `usage: devkit dev [platforms...]           run the dev processes 
        devkit version                      write the source version into every file that declares one
        devkit release <prefix>             tag this commit <prefix>-v<timestamp> and push it
        devkit secrets push|pull [root]     sync age-encrypted secrets
+       devkit update [--dry]               update the global devkit and this project's dependency to the latest
 
   Platforms are whatever "devkit.dev", "devkit.build" and "devkit.deploy" name in package.json —
   typically web, mac, iphone, iwatch. Naming one also runs the platforms it declares in "needs".
@@ -113,6 +115,10 @@ try {
     }
     case "release": {
       await runRelease(rest[0] ?? "");
+      break;
+    }
+    case "update": {
+      await runUpdate(values.dry);
       break;
     }
     case "secrets": {

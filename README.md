@@ -19,6 +19,9 @@ So does a positional, for a shell that completes them: `devkit build mac iwatch`
 bun add -d @elumixor/devkit
 ```
 
+`devkit update` moves the global `devkit` and, run inside a project, its dependency to the newest
+published version (`--dry` prints what would change).
+
 ## Configure
 
 Add a `devkit` block to your root `package.json`. Three phases, each a map of platform name to one
