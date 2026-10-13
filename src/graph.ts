@@ -2,27 +2,12 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { $ } from "bun";
+import { bold, dim, PALETTE, paint, visibleLength } from "./ansi.ts";
 import { type GenerateConfig, type Named, type Phase, type Step, withNeeds } from "./config.ts";
 
-const PALETTE: readonly string[] = ["magenta", "cyan", "yellow", "green", "blue", "red"];
-const COLORS: Record<string, string> = {
-  black: "30",
-  red: "31",
-  green: "32",
-  yellow: "33",
-  blue: "34",
-  magenta: "35",
-  cyan: "36",
-  white: "37",
-  gray: "90",
-};
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_MS = 80;
 const TAIL_ON_FAILURE = 25;
-
-const paint = (text: string, color: string) => `\x1b[${COLORS[color] ?? "37"}m${text}\x1b[0m`;
-const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
-const bold = (text: string) => `\x1b[1m${text}\x1b[0m`;
 
 type Status = "waiting" | "running" | "done" | "failed" | "skipped";
 
@@ -222,7 +207,9 @@ function report(phase: Phase, jobs: Job[], total: number) {
     skipped ? dim(`${skipped} skipped`) : "",
     dim(duration(total)),
   ].filter(Boolean);
-  console.log(`\n${bold(`${done}/${jobs.length} ${phase === "build" ? "built" : "deployed"}`)} · ${parts.join(" · ")}\n`);
+  console.log(
+    `\n${bold(`${done}/${jobs.length} ${phase === "build" ? "built" : "deployed"}`)} · ${parts.join(" · ")}\n`,
+  );
 }
 
 function printPlan(phase: Phase, jobs: Job[], generate: GenerateConfig | undefined) {
@@ -251,8 +238,4 @@ function duration(ms: number) {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
 }
 
-// Colour codes take no space on screen, so the board has to measure what a reader would see.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: an escape sequence is the thing being matched
-const ANSI = /\x1b\[[0-9;]*m/g;
-const visibleLength = (text: string) => text.replace(ANSI, "").length;
 const clip = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, room - 1)}…`);

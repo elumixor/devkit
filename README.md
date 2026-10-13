@@ -65,10 +65,28 @@ steps it runs before.
 
 ## Dev
 
-`devkit dev` frees the ports, prints the local URLs, runs everything side by side with coloured
-prefixes, and (with `--open`) opens the browser once the server is live. A platform is either one
-process or a `processes` map — a web platform is a client and an API, and neither is worth naming as
-a platform of its own.
+`devkit dev` frees the ports and runs everything side by side. A platform is either one process or a
+`processes` map — a web platform is a client and an API, and neither is worth naming as a platform of
+its own.
+
+On a terminal it draws a board: every process's URL and state (starting, ready in 1.2s, crashed) pinned
+at the top, the merged log below.
+
+```
+ devkit dev · budget                                              logs in .devkit/dev
+ ● 1 web:backend   http://localhost:3107   ready in 2.4s
+ ● 2 web:frontend  http://localhost:8087   ready in 2.1s
+── all ─────────────────────────────────────────────────────────────────────────────
+web:frontend │   VITE v8.3.0  ready in 1055 ms
+web:backend  │ [nitro] ✔ Nitro Server built in 521ms
+ 1-2 focus  a all  o open  r restart  c clear  ↑↓ PgUp PgDn scroll  q quit
+```
+
+A crashed process stays on the board until you restart it with `r`; the rest keep running. Anywhere
+else (an agent's shell, CI, a pipe, or `--plain`) it prints prefixed lines instead: the URLs first,
+then a `devkit` line for every ready, crash and exit, and one `all ready:` line listing every URL.
+Either way, each process's full output is in `.devkit/dev/<name>.log`. With `--open`, every `open`
+process's URL opens once its port answers.
 
 | field       | meaning                                                                       |
 | ----------- | ----------------------------------------------------------------------------- |
@@ -78,9 +96,9 @@ a platform of its own.
 | `script`    | script to run in the workspace (default `dev`)                                 |
 | `command`   | raw shell command, overrides the above (e.g. `vite dev`)                       |
 | `type`      | a built-in dev target — see below                                             |
-| `port`      | freed on start and shown in the URL banner                                     |
+| `port`      | freed on start, shown on the board, and polled to tell when it is ready        |
 | `needs`     | platforms that must be running too                                            |
-| `color`     | prefix colour; one is picked for you otherwise                                 |
+| `color`     | label colour; one is picked for you otherwise                                  |
 | `open`      | with `--open`, open this process's URL when its port comes up                  |
 
 ### Built-in dev targets

@@ -3,27 +3,22 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-/** Kill whatever is listening on `port` so a dev server can always bind it. */
-export async function freePort(port: number | string): Promise<void> {
-  try {
-    const { stdout } = await execAsync(`lsof -nP -iTCP:${port} -sTCP:LISTEN`);
-    const pids = [
-      ...new Set(
-        stdout
-          .split("\n")
-          .slice(1)
-          .map((line) => line.trim().split(/\s+/)[1])
-          .filter(Boolean),
-      ),
-    ];
-    if (pids.length > 0) {
-      await execAsync(`kill -9 ${pids.join(" ")}`);
-      console.log(`✓ Freed port ${port} (killed ${pids.join(", ")})`);
-    } else {
-      console.log(`✓ Port ${port} already free`);
-    }
-  } catch {
+/** Kill whatever is listening on `port` so a dev server can always bind it. Returns the killed pids. */
+export async function freePort(port: number | string): Promise<string[]> {
+  const listening = await execAsync(`lsof -nP -iTCP:${port} -sTCP:LISTEN`).then(
+    ({ stdout }) => stdout,
     // lsof exits 1 when nothing is listening
-    console.log(`✓ Port ${port} already free`);
-  }
+    () => "",
+  );
+  const pids = [
+    ...new Set(
+      listening
+        .split("\n")
+        .slice(1)
+        .map((line) => line.trim().split(/\s+/)[1])
+        .filter((pid): pid is string => Boolean(pid)),
+    ),
+  ];
+  if (pids.length > 0) await execAsync(`kill -9 ${pids.join(" ")}`);
+  return pids;
 }

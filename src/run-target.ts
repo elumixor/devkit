@@ -46,7 +46,7 @@ const TARGETS: Record<Phase, Record<string, Target>> = {
 /**
  * Runs one built-in target, looked back up by phase and platform name.
  *
- * A typed step has no shell command of its own, so the graph (and `concurrently`, for dev) spawns
+ * A typed step has no shell command of its own, so the graph (and the dev supervisor) spawns
  * `devkit _run <phase> <platform>` and this reads the same config back — which keeps every step a
  * process of its own, with its own log file and its own line on the board.
  */

@@ -34,7 +34,7 @@ export interface DevProcess extends Step {
   cwd?: string;
   /** Script to run in the workspace (default `dev`). */
   script?: string;
-  /** Port to free on start and show in the URL banner. */
+  /** Port to free on start, show on the board, and poll for readiness. */
   port?: number;
   /** With `--open`, open this process's URL once its port is live. */
   open?: boolean;

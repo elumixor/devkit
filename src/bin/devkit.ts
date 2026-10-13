@@ -16,6 +16,7 @@ import { runVersion } from "../version.ts";
 const { values, positionals } = parseArgs({
   options: {
     open: { type: "boolean", default: false },
+    plain: { type: "boolean", default: false },
     real: { type: "boolean", default: false },
     device: { type: "string" },
     dry: { type: "boolean", default: false },
@@ -47,6 +48,7 @@ const usage = `usage: devkit dev [platforms...]           run the dev processes 
   typically web, mac, iphone, iwatch. Naming one also runs the platforms it declares in "needs".
 
   --open    open each dev process's URL in the browser once its port is live
+  --plain   dev: print prefixed lines instead of the live board (automatic when not a terminal)
   --dry     print what would run without running it
   --verbose stream every line instead of drawing the live board (build, deploy)
   --real    run a simulator against the real API instead of sample data
@@ -75,7 +77,7 @@ function chdirTo(dir?: string) {
 try {
   switch (command) {
     case "dev": {
-      await runDev(platforms, { open: values.open, dry: values.dry });
+      await runDev(platforms, { open: values.open, dry: values.dry, plain: values.plain });
       break;
     }
     case "build": {
@@ -87,7 +89,7 @@ try {
       break;
     }
     // Internal: how a `type`d step actually runs — spawned as its own process by the graph (or by
-    // `concurrently`, for dev) so it gets that step's own line on the board and its own log file.
+    // the dev supervisor) so it gets that step's own line on the board and its own log file.
     case "_run": {
       const [phase, name] = rest;
       if (!isPhase(phase) || !name) throw new Error("usage: devkit _run <phase> <platform>");

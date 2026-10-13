@@ -7,4 +7,5 @@ if (!port) {
   process.exit(1);
 }
 
-await freePort(port);
+const killed = await freePort(port);
+console.log(killed.length ? `✓ Freed port ${port} (killed ${killed.join(", ")})` : `✓ Port ${port} already free`);

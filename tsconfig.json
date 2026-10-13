@@ -17,7 +17,8 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
 
-    "types": ["bun"]
+    "types": ["bun"],
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

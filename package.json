@@ -26,11 +26,14 @@
     "release:major": "npm version major -m \"Release v%s\" && git push --follow-tags"
   },
   "dependencies": {
-    "concurrently": "^10.0.3"
+    "ink": "7.1.1",
+    "react": "19.2.8",
+    "wrap-ansi": "10.0.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
     "@types/bun": "latest",
+    "@types/react": "19.2.18",
     "typescript": "^5"
   }
 }
