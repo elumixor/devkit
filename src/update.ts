@@ -28,5 +28,6 @@ export async function runUpdate(dry = false) {
   console.log(`${manifest.name ?? "project"}: ${spec} -> ${pinned ? "" : "^"}${latest}`);
   if (dry) return;
   const flags = [...(dev ? ["-d"] : []), ...(pinned ? ["--exact"] : [])];
-  await $`bun add ${flags} ${NAME}@${latest}`.quiet();
+  // `bun add` writes the spec verbatim, so a range has to be asked for as one.
+  await $`bun add ${flags} ${NAME}@${pinned ? "" : "^"}${latest}`.quiet();
 }
