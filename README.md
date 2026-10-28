@@ -82,8 +82,14 @@ at the top, the merged log below.
 ── all ─────────────────────────────────────────────────────────────────────────────
 web:frontend │   VITE v8.3.0  ready in 1055 ms
 web:backend  │ [nitro] ✔ Nitro Server built in 521ms
- 1-2 focus  a all  o open  r restart  c clear  ↑↓ PgUp PgDn scroll  q quit
+ 1-2 focus  a all  o open  r restart  c clear  jk ud gg G scroll  v select  y copy  q quit
 ```
+
+The log scrolls like `less`: `j`/`k` or arrows by a line, `u`/`d` by half a screen, PgUp/PgDn by a
+screen, `gg` to the top and `G` back to following. `v` (or `V`) starts a line selection at the bottom
+row; move it with the same keys and `y` copies it to the clipboard, `y` alone copies what is on screen.
+Dragging with the mouse selects too, scrolling on its own while the pointer is above or below the log,
+and copies on release; the wheel scrolls. Hold Option (macOS) or Shift for the terminal's own selection.
 
 A crashed process stays on the board until you restart it with `r`; the rest keep running. Anywhere
 else (an agent's shell, CI, a pipe, or `--plain`) it prints prefixed lines instead: the URLs first,
