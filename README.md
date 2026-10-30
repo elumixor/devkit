@@ -82,7 +82,7 @@ at the top, the merged log below.
 ── all ─────────────────────────────────────────────────────────────────────────────
 web:frontend │   VITE v8.3.0  ready in 1055 ms
 web:backend  │ [nitro] ✔ Nitro Server built in 521ms
- 1-2 focus  a all  o open  r restart  c clear  jk ud gg G scroll  v select  y copy  q quit
+ 1-2 focus  a all  o open  r restart  c clear  jk ud gg G scroll  v select  y copy  e errors  q quit
 ```
 
 The log scrolls like `less`: `j`/`k` or arrows by a line, `u`/`d` by half a screen, PgUp/PgDn by a
@@ -90,6 +90,10 @@ screen, `gg` to the top and `G` back to following. `v` (or `V`) starts a line se
 row; move it with the same keys and `y` copies it to the clipboard, `y` alone copies what is on screen.
 Dragging with the mouse selects too, scrolling on its own while the pointer is above or below the log,
 and copies on release; the wheel scrolls. Hold Option (macOS) or Shift for the terminal's own selection.
+
+A printed error with a stack folds into one red summary row (its message, plus a database `detail`
+when there is one). Click `[copy]` to copy the whole error, or the `[▸ N lines]` button to expand it;
+`e` expands or folds every error.
 
 A crashed process stays on the board until you restart it with `r`; the rest keep running. Anywhere
 else (an agent's shell, CI, a pipe, or `--plain`) it prints prefixed lines instead: the URLs first,

@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import wrapAnsi from "wrap-ansi";
 import { stripColor } from "../ansi.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { type ErrorBlock, foldErrors, type ShownEntry } from "./errors.ts";
 import type { Service, ServiceState } from "./service.ts";
-import { DEVKIT, type LogEntry, type Supervisor } from "./supervisor.ts";
+import { DEVKIT, type Supervisor } from "./supervisor.ts";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_MS = 80;
@@ -28,6 +29,10 @@ const WHEEL_DOWN = 65;
 /** Button presses, drags and releases, reported as SGR coordinates. */
 const MOUSE_ON = "\x1b[?1002h\x1b[?1006h";
 const MOUSE_OFF = "\x1b[?1002l\x1b[?1006l";
+/** The buttons ahead of an error's summary, and the columns they take after the log's gutter. */
+const COPY_BUTTON = "[copy]";
+const toggleButton = (error: ErrorBlock & { expanded: boolean }) =>
+  `[${error.expanded ? "▾" : "▸"} ${error.lines} lines]`;
 
 const MARK: Record<ServiceState, { glyph: string; color: string }> = {
   starting: { glyph: "", color: "yellow" },
@@ -60,6 +65,8 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
   const frame = useFrame(supervisor.services.some((s) => s.state === "starting" || s.state === "stopping"));
 
   const [focus, setFocus] = useState<number | null>(null);
+  /** `seq`s of the errors shown whole instead of as a summary. */
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   /** `seq` the view ends before while scrolled back; `null` follows the newest line. */
   const [end, setEnd] = useState<number | null>(null);
   const [quitting, setQuitting] = useState(false);
@@ -95,8 +102,9 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
   const textWidth = Math.max(MIN_LOG_WIDTH, cols - labelWidth - 3);
   const halfPage = Math.max(1, Math.floor(logRows / 2));
 
-  const shown = supervisor.entries.filter(
-    (entry) => focus == null || entry.source === focus || entry.source === DEVKIT,
+  const shown = foldErrors(
+    supervisor.entries.filter((entry) => focus == null || entry.source === focus || entry.source === DEVKIT),
+    expanded,
   );
   const endIndex = end == null ? shown.length : countBefore(shown, end);
   const who = (source: number) =>
@@ -144,10 +152,27 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
     if (resumeFollow.current) setEnd(null);
   };
 
-  const yank = (entries: readonly LogEntry[]) => {
-    if (entries.length === 0) return;
-    copyToClipboard(entries.map((entry) => stripColor(entry.text)).join("\n"), stdout);
-    setFlash(`copied ${entries.length} line${entries.length === 1 ? "" : "s"}`);
+  const yank = (entries: readonly ShownEntry[]) => {
+    // An expanded error's lines follow its summary, so the summary itself adds nothing.
+    const texts = entries.flatMap((entry) =>
+      entry.error ? (entry.error.expanded ? [] : [entry.error.text]) : [stripColor(entry.text)],
+    );
+    if (texts.length === 0) return;
+    copyToClipboard(texts.join("\n"), stdout);
+    const count = texts.join("\n").split("\n").length;
+    setFlash(`copied ${count} line${count === 1 ? "" : "s"}`);
+  };
+
+  const toggleError = (seq: number) => {
+    const next = new Set(expanded);
+    if (!next.delete(seq)) next.add(seq);
+    setExpanded(next);
+  };
+
+  /** Expands every error unless all already are, then folds them all. */
+  const toggleErrors = () => {
+    const errors = shown.flatMap((entry) => (entry.error ? [entry.error] : []));
+    setExpanded(errors.every((error) => error.expanded) ? new Set() : new Set(errors.map((error) => error.seq)));
   };
 
   const yankSelection = () => {
@@ -166,7 +191,7 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
     void supervisor.stop().then(() => exit());
   };
 
-  const onMouse = ({ button, row, release }: MouseEvent) => {
+  const onMouse = ({ button, row, col, release }: MouseEvent) => {
     const at = row - logTop;
     if (button === WHEEL_UP || button === WHEEL_DOWN) {
       const by = button === WHEEL_UP ? -WHEEL_LINES : WHEEL_LINES;
@@ -179,6 +204,15 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
     if (button === LEFT) {
       const line = lines[at];
       if (!line) return;
+      const x = col - 1 - (labelWidth + 3);
+      if (line.error && !visual) {
+        if (x >= 0 && x < COPY_BUTTON.length) {
+          copyToClipboard(line.error.text, stdout);
+          return setFlash(`copied error (${line.error.lines} lines)`);
+        }
+        const toggleAt = COPY_BUTTON.length + 1;
+        if (x >= toggleAt && x < toggleAt + toggleButton(line.error).length) return toggleError(line.error.seq);
+      }
       startVisual(line.seq);
       return setDragging(true);
     }
@@ -223,6 +257,7 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
       return last && startVisual(last.seq);
     }
     if (input === "y") return yank(shown.slice(firstVisible(shown, endIndex, logRows, textWidth), endIndex));
+    if (input === "e") return toggleErrors();
     const digit = Number(input);
     if (Number.isInteger(digit) && digit >= 1 && digit <= services.length) {
       setFocus(focus === digit - 1 ? null : digit - 1);
@@ -287,9 +322,20 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
                 <Text dimColor> │ </Text>
               )}
               {/* Inverse on the plain text: a child's own colour resets would cut the highlight short. */}
-              {mark ? (
+              {line.error && !mark ? (
+                <Text wrap="truncate-end">
+                  <Text inverse>{COPY_BUTTON}</Text> <Text inverse>{toggleButton(line.error)}</Text>{" "}
+                  <Text color="red" bold>
+                    {line.error.summary}
+                  </Text>
+                </Text>
+              ) : mark ? (
                 <Text inverse wrap="truncate-end">
                   {stripColor(line.text) || " "}
+                </Text>
+              ) : line.failed ? (
+                <Text color="red" wrap="truncate-end">
+                  {stripColor(line.text)}
                 </Text>
               ) : (
                 <Text wrap="truncate-end">{line.text}</Text>
@@ -389,6 +435,7 @@ function Footer({
           ["jk ud gg G", "scroll"],
           ["v", "select"],
           ["y", "copy"],
+          ["e", "errors"],
           ["q", "quit"],
         ]
       : [
@@ -420,11 +467,13 @@ interface LogLine {
   readonly text: string;
   /** Only an entry's first wrapped row carries its label. */
   readonly first: boolean;
+  readonly error?: ShownEntry["error"];
+  readonly failed?: boolean;
 }
 
 /** The last `count` screen rows of `entries[0, endIndex)`, wrapped to `width`. */
 function tail(
-  entries: readonly LogEntry[],
+  entries: readonly ShownEntry[],
   endIndex: number,
   count: number,
   width: number,
@@ -432,57 +481,60 @@ function tail(
 ): LogLine[] {
   const out: LogLine[] = [];
   for (let i = endIndex - 1; i >= 0 && out.length < count; i--) {
-    const entry = entries[i] as LogEntry;
-    const rows = wrapAnsi(entry.text, width, { hard: true, trim: false }).split("\n");
+    const entry = entries[i] as ShownEntry;
+    const rows = entry.error ? [entry.text] : wrapAnsi(entry.text, width, { hard: true, trim: false }).split("\n");
     for (let row = rows.length - 1; row >= 0 && out.length < count; row--)
       out.push({
         key: `${entry.seq}:${row}`,
         seq: entry.seq,
         text: rows[row] ?? "",
         first: row === 0,
+        error: entry.error,
+        failed: entry.failed,
         ...who(entry.source),
       });
   }
   return out.reverse();
 }
 
-const heightOf = (entry: LogEntry, width: number) =>
-  wrapAnsi(entry.text, width, { hard: true, trim: false }).split("\n").length;
+/** An error's summary is one row, cut short rather than wrapped. */
+const heightOf = (entry: ShownEntry, width: number) =>
+  entry.error ? 1 : wrapAnsi(entry.text, width, { hard: true, trim: false }).split("\n").length;
 
 /** The fewest leading entries that fill the log — scrolling back further would only show blank rows. */
-function firstFullScreen(entries: readonly LogEntry[], rows: number, width: number) {
+function firstFullScreen(entries: readonly ShownEntry[], rows: number, width: number) {
   let filled = 0;
   for (let i = 0; i < entries.length; i++) {
-    filled += heightOf(entries[i] as LogEntry, width);
+    filled += heightOf(entries[i] as ShownEntry, width);
     if (filled >= rows) return i + 1;
   }
   return entries.length;
 }
 
 /** The first entry `entries[0, endIndex)` shows whole, so a cursor there needs no scrolling. */
-function firstVisible(entries: readonly LogEntry[], endIndex: number, rows: number, width: number) {
+function firstVisible(entries: readonly ShownEntry[], endIndex: number, rows: number, width: number) {
   let filled = 0;
   let i = endIndex;
-  while (i > 0 && filled < rows) filled += heightOf(entries[--i] as LogEntry, width);
+  while (i > 0 && filled < rows) filled += heightOf(entries[--i] as ShownEntry, width);
   return Math.min(Math.max(0, endIndex - 1), filled > rows ? i + 1 : i);
 }
 
 /** Where a view must end to show `entries[start]` on its top row. */
-function endFor(entries: readonly LogEntry[], start: number, rows: number, width: number) {
+function endFor(entries: readonly ShownEntry[], start: number, rows: number, width: number) {
   let filled = 0;
   let i = start;
-  while (i < entries.length && filled + heightOf(entries[i] as LogEntry, width) <= rows)
-    filled += heightOf(entries[i++] as LogEntry, width);
+  while (i < entries.length && filled + heightOf(entries[i] as ShownEntry, width) <= rows)
+    filled += heightOf(entries[i++] as ShownEntry, width);
   return Math.max(i, start + 1);
 }
 
 /** How many entries come before `seq` — entries are in `seq` order. */
-function countBefore(entries: readonly LogEntry[], seq: number) {
+function countBefore(entries: readonly ShownEntry[], seq: number) {
   let low = 0;
   let high = entries.length;
   while (low < high) {
     const mid = (low + high) >> 1;
-    if ((entries[mid] as LogEntry).seq < seq) low = mid + 1;
+    if ((entries[mid] as ShownEntry).seq < seq) low = mid + 1;
     else high = mid;
   }
   return low;
@@ -497,16 +549,17 @@ function openTarget(services: readonly Service[], focus: number | null) {
 
 interface MouseEvent {
   readonly button: number;
-  /** 1-based screen row. */
+  /** 1-based screen row and column. */
   readonly row: number;
+  readonly col: number;
   readonly release: boolean;
 }
 
 /** Ink hands an SGR mouse report to `useInput` whole, minus its escape. */
 function parseMouse(input: string): MouseEvent | undefined {
-  const match = /^\[<(\d+);\d+;(\d+)([Mm])$/.exec(input);
+  const match = /^\[<(\d+);(\d+);(\d+)([Mm])$/.exec(input);
   if (!match) return undefined;
-  return { button: Number(match[1]), row: Number(match[2]), release: match[3] === "m" };
+  return { button: Number(match[1]), col: Number(match[2]), row: Number(match[3]), release: match[4] === "m" };
 }
 
 /**
