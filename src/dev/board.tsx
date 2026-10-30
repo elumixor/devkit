@@ -314,21 +314,28 @@ function Board({ supervisor, title }: { readonly supervisor: Supervisor; readonl
         {lines.map((line) => {
           const mark = markOf(line.seq);
           return (
-            <Box key={line.key}>
-              <Text color={line.color}>{(line.first ? line.label : "").padEnd(labelWidth)}</Text>
-              {mark ? (
-                <Text color="yellow">{mark === "cursor" && line.first ? " ▶ " : " ┃ "}</Text>
-              ) : (
-                <Text dimColor> │ </Text>
-              )}
+            // One row each, the label and gutter never shrinking: a long row is cut, not wrapped.
+            <Box key={line.key} height={1}>
+              <Box flexShrink={0}>
+                <Text color={line.color}>{(line.first ? line.label : "").padEnd(labelWidth)}</Text>
+                {mark ? (
+                  <Text color="yellow">{mark === "cursor" && line.first ? " ▶ " : " ┃ "}</Text>
+                ) : (
+                  <Text dimColor> │ </Text>
+                )}
+              </Box>
               {/* Inverse on the plain text: a child's own colour resets would cut the highlight short. */}
               {line.error && !mark ? (
-                <Text wrap="truncate-end">
-                  <Text inverse>{COPY_BUTTON}</Text> <Text inverse>{toggleButton(line.error)}</Text>{" "}
-                  <Text color="red" bold>
+                <>
+                  <Box flexShrink={0}>
+                    <Text>
+                      <Text inverse>{COPY_BUTTON}</Text> <Text inverse>{toggleButton(line.error)}</Text>{" "}
+                    </Text>
+                  </Box>
+                  <Text color="red" bold wrap="truncate-end">
                     {line.error.summary}
                   </Text>
-                </Text>
+                </>
               ) : mark ? (
                 <Text inverse wrap="truncate-end">
                   {stripColor(line.text) || " "}
