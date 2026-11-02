@@ -276,9 +276,27 @@ devkit cloud status               # what is live, with calls, errors and p95 for
 devkit cloud logs --follow        # CloudWatch logs for the stage
 devkit cloud deploys <project>    # the last ten deploys
 devkit cloud rollback <project>   # back to the previous deploy, in seconds
+devkit cloud infra apply          # Terraform in infra/, mapped outputs into each stage's env
 devkit cloud domains add <project> <host>   # cert, alias, Cloudflare DNS, route; later deploys keep it
 devkit cloud destroy <project> --stage development
 ```
+
+Databases and anything else the platform doesn't make itself stay declared in Terraform. Point the
+target at the module and name which outputs become which env vars per stage:
+
+```json
+"terraform": {
+  "dir": "infra",
+  "env": {
+    "production": { "DATABASE_URL": "production_database_url" },
+    "development": { "DATABASE_URL": "develop_database_url" }
+  }
+}
+```
+
+`devkit cloud infra plan` shows the changes, `apply` makes them and copies the outputs into SSM,
+`sync` only copies. The next deploy reads them like any other env var; CI needs no Terraform
+credentials. Resources the function itself must call (a queue, a table) also need `permissions`.
 
 Env vars live in SSM at `/dk/<project>/<stage>/<KEY>` and are copied into the function at deploy,
 and into the build's environment, so `VITE_*` values reach the frontend in CI too. In the function,

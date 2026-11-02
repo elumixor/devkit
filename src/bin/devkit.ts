@@ -31,6 +31,7 @@ const { values, positionals } = parseArgs({
     follow: { type: "boolean", default: false },
     to: { type: "string" },
     email: { type: "string" },
+    yes: { type: "boolean", short: "y", default: false },
     version: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
@@ -118,6 +119,7 @@ try {
         follow: values.follow,
         to: values.to,
         email: values.email,
+        yes: values.yes,
       });
       break;
     }

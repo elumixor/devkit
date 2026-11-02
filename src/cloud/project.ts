@@ -43,8 +43,22 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   healthPath?: string;
   /** Stage name to git branch (default production=main, development=develop). */
   stages?: Record<string, string>;
+  /** Databases and other resources declared in Terraform, their outputs fed into the stage env. */
+  terraform?: TerraformConfig;
   /** Extra IAM statements for the function — an app that reads other AWS resources, like the dashboard. */
   permissions?: Permission[];
+}
+
+/**
+ * Resources the platform doesn't make itself (a Neon database, a queue, a DNS record) live in a
+ * Terraform root module. `devkit cloud infra apply` applies it and copies the named outputs into
+ * each stage's env, where the next deploy picks them up.
+ */
+export interface TerraformConfig {
+  /** The root module, relative to the repo (default `infra`). */
+  dir?: string;
+  /** Stage → env var → Terraform output name, e.g. `{ production: { DATABASE_URL: "production_database_url" } }`. */
+  env: Record<string, Record<string, string>>;
 }
 
 export const DEFAULTS = { memory: 512, timeout: 120, routing: "spa" as Routing, healthPath: "/api/health" };

@@ -2,6 +2,7 @@ import { bootstrap } from "./bootstrap.ts";
 import { destroy } from "./commands/destroy.ts";
 import { domains } from "./commands/domains.ts";
 import { env } from "./commands/env.ts";
+import { infra } from "./commands/infra.ts";
 import { init } from "./commands/init.ts";
 import { logs } from "./commands/logs.ts";
 import { rollback } from "./commands/rollback.ts";
@@ -14,6 +15,7 @@ export interface CloudFlags {
   follow?: boolean;
   to?: string;
   email?: string;
+  yes?: boolean;
 }
 
 export const CLOUD_USAGE = `usage: devkit cloud bootstrap [--email x]      once per account: buckets, edge, roles, budgets
@@ -23,6 +25,7 @@ export const CLOUD_USAGE = `usage: devkit cloud bootstrap [--email x]      once 
        devkit cloud logs [project] [--stage s] [--since 1h] [--grep x] [--follow]
        devkit cloud rollback <project> [--stage s] [--to <deployId>]
        devkit cloud env ls|pull|push|set|rm [--stage s]
+       devkit cloud infra plan|apply|sync [--yes]   Terraform resources, outputs into stage env
        devkit cloud domains ls|add|rm <project> [host] [--stage s]
        devkit cloud destroy <project> --stage s`;
 
@@ -46,6 +49,8 @@ export function runCloud(args: readonly string[], flags: CloudFlags) {
       return rollback(rest[0], flags.stage, flags.to);
     case "env":
       return env(rest[0], rest.slice(1), flags.stage);
+    case "infra":
+      return infra(rest[0], { yes: flags.yes });
     case "domains":
       return domains(rest[0], rest[1], rest[2], flags.stage);
     case "destroy":
