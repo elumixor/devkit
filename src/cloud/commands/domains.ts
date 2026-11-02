@@ -1,7 +1,7 @@
 import { bold, dim } from "../../ansi.ts";
 import { CloudError, log } from "../aws.ts";
 import { deleteRecord } from "../reconcile/cloudflare.ts";
-import { needsAlias, reconcileAliases } from "../reconcile/edge.ts";
+import { needsDns, reconcileAliases } from "../reconcile/edge.ts";
 import { deleteRoute, getRoute, putRoutes } from "../reconcile/kvs.ts";
 import { readRegistry, updateRegistryHostname } from "../records.ts";
 import { targetByName } from "./context.ts";
@@ -34,7 +34,7 @@ export async function removeDomain(project: string, host: string, stageFlag?: st
   const { target } = await targetByName(project, stageFlag);
   if (host === target.defaultHost) throw new CloudError(`${host} is the stage's default hostname and stays`);
   await deleteRoute(host);
-  if (needsAlias(host)) {
+  if (needsDns(host)) {
     await reconcileAliases([], [host]);
     await deleteRecord(host, "CNAME");
   }

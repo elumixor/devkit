@@ -258,6 +258,10 @@ immutable — its own S3 prefix and Lambda version — so a rollback is two writ
 }
 ```
 
+A `domains` entry starting with `*.` (say `*.desk.atmagaming.com`) only adds a wildcard alias to the
+distribution: every hostname under it then rides one certificate name, which keeps the shared
+certificate under ACM's per-certificate name quota. List it next to the hosts it covers.
+
 `devkit deploy` builds, then: reconciles the function, role, log group, URL, schedules and domains;
 uploads the static files (unchanged files are copied server-side); publishes a new function
 version; runs `predeploy` with the stage's env; invokes the new version's `/api/health`; and only

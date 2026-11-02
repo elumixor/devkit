@@ -38,13 +38,23 @@ export async function requireDistribution() {
   return distribution;
 }
 
-/** Default hostnames ride the wildcard alias; anything else must be added to the distribution and its certificate. */
-export const needsAlias = (hostname: string) =>
-  !hostname.endsWith(WILDCARD_DOMAIN.slice(1)) || hostname.split(".").length !== WILDCARD_DOMAIN.split(".").length;
+export const isWildcard = (hostname: string) => hostname.startsWith("*.");
+
+/** A wildcard alias covers exactly one label under it: `*.desk.example.com` covers `keep.desk.example.com`. */
+const covers = (alias: string, hostname: string) =>
+  isWildcard(alias) &&
+  !isWildcard(hostname) &&
+  hostname.endsWith(alias.slice(1)) &&
+  hostname.split(".").length === alias.split(".").length;
+
+/** Default hostnames ride the platform's wildcard alias and DNS record; any other hostname needs a DNS record. */
+export const needsDns = (hostname: string) => !isWildcard(hostname) && !covers(WILDCARD_DOMAIN, hostname);
 
 /**
  * Adds hostnames as aliases, swapping in a certificate that covers them all when the current one
- * doesn't, and points each at the distribution in DNS. Removing works the same way in reverse.
+ * doesn't, and points each at the distribution in DNS. A hostname a wildcard alias already covers
+ * (`*.desk.example.com`, listed in a config's `domains` like any host) takes no alias or certificate
+ * name of its own, which keeps the certificate under ACM's name quota. Removing works in reverse.
  */
 export async function reconcileAliases(add: readonly string[], remove: readonly string[] = []) {
   const distribution = await requireDistribution();
@@ -54,12 +64,13 @@ export async function reconcileAliases(add: readonly string[], remove: readonly 
   if (!config || !ETag) throw new CloudError("CloudFront returned no distribution config");
 
   const current = config.Aliases?.Items ?? [];
+  const kept = [...PLATFORM_ALIASES, ...current.filter((alias) => !remove.includes(alias)), ...add.filter(isWildcard)];
   const wanted = [
-    ...new Set([...PLATFORM_ALIASES, ...current.filter((alias) => !remove.includes(alias)), ...add.filter(needsAlias)]),
+    ...new Set([...kept, ...add.filter((host) => !kept.includes(host) && !kept.some((alias) => covers(alias, host)))]),
   ].sort();
   const unchanged = wanted.length === current.length && wanted.every((alias) => current.includes(alias));
 
-  for (const hostname of add.filter(needsAlias)) {
+  for (const hostname of add.filter(needsDns)) {
     const outcome = await ensureRecord(hostname, "CNAME", distribution.domainName);
     if (outcome !== "unchanged") log(`  DNS ${hostname} → ${distribution.domainName} ${outcome}`);
   }

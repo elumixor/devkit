@@ -32,7 +32,10 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   timeout?: number;
   /** Scheduled calls into the API. */
   crons?: CronConfig[];
-  /** Custom hostnames per stage, besides the default `<project>.devkit.atmagaming.com`. */
+  /**
+   * Custom hostnames per stage, besides the default `<project>.devkit.atmagaming.com`. A `*.` entry is a
+   * wildcard alias only (no route or DNS): hostnames under it then share one certificate name.
+   */
   domains?: Record<string, string[]>;
   /** Shell command run with the stage's env after the code is published and before it goes live — migrations. */
   predeploy?: string;
@@ -82,7 +85,7 @@ export class Target {
   }
   /** Every hostname that routes to this stage; the first custom domain is the one the app calls its own. */
   get hostnames(): readonly string[] {
-    return [...this.domains, this.defaultHost];
+    return [...this.domains.filter((host) => !host.startsWith("*.")), this.defaultHost];
   }
   get primaryHost() {
     return this.hostnames[0] as string;

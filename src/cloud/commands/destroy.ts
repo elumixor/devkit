@@ -2,7 +2,7 @@ import { CloudError, log } from "../aws.ts";
 import { deleteStageEnv } from "../env.ts";
 import { stage as names } from "../names.ts";
 import { deleteRecord } from "../reconcile/cloudflare.ts";
-import { needsAlias, reconcileAliases } from "../reconcile/edge.ts";
+import { needsDns, reconcileAliases } from "../reconcile/edge.ts";
 import { deleteRole } from "../reconcile/iam.ts";
 import { updateKeys } from "../reconcile/kvs.ts";
 import { deleteFunction } from "../reconcile/lambda.ts";
@@ -20,7 +20,7 @@ export async function destroy(project: string | undefined, stageFlag: string | u
 
   await updateKeys({}, recorded.hostnames);
   log("  routes removed");
-  const custom = recorded.hostnames.filter(needsAlias);
+  const custom = recorded.hostnames.filter(needsDns);
   if (custom.length) {
     await reconcileAliases([], custom);
     for (const host of custom) await deleteRecord(host, "CNAME");
