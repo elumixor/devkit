@@ -21,6 +21,6 @@ export async function deployAws(options: AwsTargetOptions) {
   // exactly as they do from a laptop's `.env`.
   Object.assign(process.env, await readStageEnv(target));
 
-  await buildWeb({ ...options, host: "aws" });
+  await buildWeb({ ...options, host: "aws", static: target.isStatic });
   await release(target, { root });
 }

@@ -1,10 +1,10 @@
 import { CloudError, log } from "../aws.ts";
 import { deleteStageEnv } from "../env.ts";
-import { stage as names } from "../names.ts";
+import { headersKey, stage as names } from "../names.ts";
 import { deleteRecord } from "../reconcile/cloudflare.ts";
 import { needsDns, reconcileAliases } from "../reconcile/edge.ts";
 import { deleteRole } from "../reconcile/iam.ts";
-import { updateKeys } from "../reconcile/kvs.ts";
+import { keysWithPrefix, updateKeys } from "../reconcile/kvs.ts";
 import { deleteFunction } from "../reconcile/lambda.ts";
 import { deleteLogGroup } from "../reconcile/logs.ts";
 import { buckets, deletePrefix } from "../reconcile/s3.ts";
@@ -18,7 +18,7 @@ export async function destroy(project: string | undefined, stageFlag: string | u
   const { target, recorded } = await targetByName(project, stageFlag);
   log(`Destroying ${project} ${target.stage}`);
 
-  await updateKeys({}, recorded.hostnames);
+  await updateKeys({}, [...recorded.hostnames, ...(await keysWithPrefix(headersKey(project, `${target.stage}/`)))]);
   log("  routes removed");
   const custom = recorded.hostnames.filter(needsDns);
   if (custom.length) {

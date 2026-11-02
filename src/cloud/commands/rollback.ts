@@ -1,5 +1,6 @@
 import { CloudError, log } from "../aws.ts";
-import { getRoute, putRoutes } from "../reconcile/kvs.ts";
+import { headersKey } from "../names.ts";
+import { getRoute, hasKey, putRoutes } from "../reconcile/kvs.ts";
 import { pointLiveAlias } from "../reconcile/lambda.ts";
 import { listDeploys, readCurrent, readDeploy, writeCurrent, writeDeploy } from "../records.ts";
 import { targetByName } from "./context.ts";
@@ -28,10 +29,13 @@ export async function rollback(project: string, stageFlag: string | undefined, t
   const started = Date.now();
   log(`Rolling ${project} ${target.stage} back from ${current.deployId} to ${to.id} (${to.message})`);
 
-  await pointLiveAlias(target.functionName, to.version);
   const route = await getRoute(recorded.hostnames[0] as string);
   if (!route) throw new CloudError(`No route record for ${recorded.hostnames[0]} — deploy once before rolling back`);
-  const moved = { ...route, d: `${target.stage}/${to.id}` };
+  // A static site has no function, so its route names none.
+  if (route.fn) await pointLiveAlias(target.functionName, to.version);
+  const d = `${target.stage}/${to.id}`;
+  const { h: _, ...rest } = route;
+  const moved = (await hasKey(headersKey(project, d))) ? { ...rest, d, h: 1 as const } : { ...rest, d };
   await putRoutes(Object.fromEntries(recorded.hostnames.map((host) => [host, moved])));
 
   const now = new Date().toISOString();

@@ -7,7 +7,7 @@ import {
   UpdateKeysCommand,
 } from "@aws-sdk/client-cloudfront-keyvaluestore";
 import { CloudError, cloudfront, kvs, orUndefined } from "../aws.ts";
-import { EDGE_SECRET_KEY, platform } from "../names.ts";
+import { EDGE_SECRET_KEY, platform, RESERVED_KEY_PREFIX } from "../names.ts";
 import type { Routing } from "../project.ts";
 
 /**
@@ -22,6 +22,8 @@ export interface RouteRecord {
   fn: string;
   api: readonly string[];
   mode: Routing;
+  /** Set when the deploy has response headers, kept under `headersKey(p, d)`. */
+  h?: 1;
 }
 
 let storeArn: Promise<string> | undefined;
@@ -78,6 +80,27 @@ export async function deleteRoute(host: string) {
   );
 }
 
+export async function hasKey(key: string) {
+  const result = await orUndefined(
+    kvs().send(new GetKeyCommand({ KvsARN: await routeStoreArn(), Key: key })),
+    "ResourceNotFoundException",
+  );
+  return result?.Value !== undefined;
+}
+
+/** Every key starting with `prefix` — the store has no prefix query, so this lists them all. */
+export async function keysWithPrefix(prefix: string) {
+  const arn = await routeStoreArn();
+  const keys: string[] = [];
+  let NextToken: string | undefined;
+  do {
+    const page = await kvs().send(new ListKeysCommand({ KvsARN: arn, NextToken }));
+    for (const item of page.Items ?? []) if (item.Key?.startsWith(prefix)) keys.push(item.Key);
+    NextToken = page.NextToken;
+  } while (NextToken);
+  return keys;
+}
+
 /** Every hostname → record pair in the store, for `status` across projects. */
 export async function listRoutes(): Promise<Record<string, RouteRecord>> {
   const arn = await routeStoreArn();
@@ -86,7 +109,8 @@ export async function listRoutes(): Promise<Record<string, RouteRecord>> {
   do {
     const page = await kvs().send(new ListKeysCommand({ KvsARN: arn, NextToken }));
     for (const item of page.Items ?? []) {
-      if (item.Key && item.Value && item.Key !== EDGE_SECRET_KEY) routes[item.Key] = JSON.parse(item.Value);
+      if (item.Key && item.Value && !item.Key.startsWith(RESERVED_KEY_PREFIX))
+        routes[item.Key] = JSON.parse(item.Value);
     }
     NextToken = page.NextToken;
   } while (NextToken);

@@ -51,6 +51,10 @@ export const ORIGINS = { sites: "sites", blobs: "blobs" } as const;
 /** The KVS key whose value is the edge secret, and the header that carries it to the function. */
 export const EDGE_SECRET_KEY = "_edge";
 export const EDGE_HEADER = "x-dk-edge";
+/** KVS keys starting with this hold no route: the edge secret, a deploy's response headers. */
+export const RESERVED_KEY_PREFIX = "_";
+/** The KVS key holding one deploy's compiled response headers; `deployPath` is the route record's `d`. */
+export const headersKey = (project: string, deployPath: string) => `_h/${project}/${deployPath}`;
 /** The viewer's hostname, carried to the function because the origin request drops `Host`. */
 export const HOST_HEADER = "x-dk-host";
 /** Set by the router per request so two projects' identical API paths never share a cache entry. */

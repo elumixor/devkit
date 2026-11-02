@@ -258,6 +258,23 @@ immutable — its own S3 prefix and Lambda version — so a rollback is two writ
 }
 ```
 
+`headers` sets response headers by path, as `vercel.json` does, and takes a `vercel.json` block
+pasted as is (`[{ "key", "value" }]`) or a plain map. `source` is Vercel's syntax: `:name` is one
+segment, `:name*` any depth, `( )` a raw regex. The router adds them on the way out, cache hits
+included, so they change with the deploy and roll back with it. They apply to 2xx and 3xx
+responses only (CloudFront runs no function on an origin error), and compile to 1 KB at most.
+
+```jsonc
+"headers": [
+  { "source": "/bar.js", "headers": { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=300" } },
+  { "source": "/icons/(.*)", "headers": { "Access-Control-Allow-Origin": "*" } }
+]
+```
+
+`"apiPrefixes": []` makes a static site: no Nitro build, no function, role, schedules or health
+check, only the files. A frontend with no `build` script is served as it is, so a folder of
+hand-written files is `"frontendDir": ".", "webBuildDir": "public"`.
+
 A `domains` entry starting with `*.` (say `*.desk.atmagaming.com`) only adds a wildcard alias to the
 distribution: every hostname under it then rides one certificate name, which keeps the shared
 certificate under ACM's per-certificate name quota. List it next to the hosts it covers.

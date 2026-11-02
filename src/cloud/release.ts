@@ -7,11 +7,12 @@ import { AWS_OUTPUT } from "../build-targets/web.ts";
 import { CloudError, log, s3 } from "./aws.ts";
 import { type Env, ensureSecret, readParameter, readStageEnv } from "./env.ts";
 import { startGithubDeployment } from "./github.ts";
-import { EDGE_HEADER, HOST_HEADER, stage as names, platform } from "./names.ts";
+import { compileHeaders } from "./headers.ts";
+import { EDGE_HEADER, HOST_HEADER, headersKey, stage as names, platform } from "./names.ts";
 import type { Target } from "./project.ts";
 import { pointDns, reconcileAliases } from "./reconcile/edge.ts";
 import { ensureFunctionRole, ensureSchedulerRole } from "./reconcile/iam.ts";
-import { putRoutes, type RouteRecord } from "./reconcile/kvs.ts";
+import { keysWithPrefix, type RouteRecord, updateKeys } from "./reconcile/kvs.ts";
 import {
   deleteVersion,
   ensureFunctionUrl,
@@ -63,7 +64,10 @@ export async function release(target: Target, options: ReleaseOptions) {
   const deployId = `${timestamp()}-${git.sha.slice(0, 7)}`;
   const staticDir = join(options.root, AWS_OUTPUT, "static");
   const serverDir = join(options.root, AWS_OUTPUT, "server");
-  if (!existsSync(serverDir)) throw new CloudError(`No build at ${serverDir} — the web build runs first`);
+  if (!target.isStatic && !existsSync(serverDir))
+    throw new CloudError(`No build at ${serverDir} — the web build runs first`);
+  if (target.isStatic && target.crons.length) throw new CloudError('"crons" need an API — "apiPrefixes" is empty');
+  const headers = compileHeaders(target.headers);
 
   const { sites, blobs } = await buckets();
   const hostnames = await deployHostnames(target);
@@ -86,11 +90,35 @@ export async function release(target: Target, options: ReleaseOptions) {
     log(`Deploying ${target.project} ${target.stage} as ${deployId}`);
 
     step("reconcile");
-    const [role, schedulerRole] = await Promise.all([ensureFunctionRole(target), ensureSchedulerRole()]);
-    await Promise.all([ensureLogGroup(target.logGroup), ensureScheduleGroup()]);
     const aliasesChanged = target.domains.length ? (await reconcileAliases(target.domains)).changed : false;
     const edgeSecret = await readParameter(platform.edgeSecretParameter);
     if (!edgeSecret) throw new CloudError("No edge secret in SSM — run `devkit cloud bootstrap`");
+
+    if (target.isStatic) {
+      step("upload");
+      const previous = await readCurrent(target);
+      await uploadStatic(target, staticDir, deployId, previous?.deployId);
+      record.version = STATIC_VERSION;
+
+      step("flip");
+      const deployPath = `${target.stage}/${deployId}`;
+      const route: RouteRecord = {
+        p: target.project,
+        s: target.stage,
+        d: deployPath,
+        fn: "",
+        api: [],
+        mode: target.routing,
+      };
+      await flipRoutes(target, hostnames, route, headers);
+      await pointDns(target.domains, aliasesChanged);
+
+      await finish(target, record, previous?.deployId, "", hostnames, github, sites, started);
+      return;
+    }
+
+    const [role, schedulerRole] = await Promise.all([ensureFunctionRole(target), ensureSchedulerRole()]);
+    await Promise.all([ensureLogGroup(target.logGroup), ensureScheduleGroup()]);
 
     step("env");
     const stageEnv = await readStageEnv(target);
@@ -112,12 +140,7 @@ export async function release(target: Target, options: ReleaseOptions) {
 
     step("upload");
     const previous = await readCurrent(target);
-    const prefix = names.deployPrefix(target.project, target.stage, deployId);
-    const previousPrefix = previous ? names.deployPrefix(target.project, target.stage, previous.deployId) : undefined;
-    const uploaded = existsSync(staticDir)
-      ? await uploadDirectory(sites, staticDir, prefix, previousPrefix)
-      : { uploaded: 0, copied: 0, bytes: 0 };
-    log(`  ${uploaded.uploaded} files uploaded (${formatBytes(uploaded.bytes)}), ${uploaded.copied} unchanged`);
+    await uploadStatic(target, staticDir, deployId, previous?.deployId);
 
     step("publish");
     const codeKey = names.codeKey(target.project, target.stage, deployId);
@@ -158,26 +181,12 @@ export async function release(target: Target, options: ReleaseOptions) {
       api: target.apiPrefixes,
       mode: target.routing,
     };
-    await putRoutes(Object.fromEntries(hostnames.map((host) => [host, route])));
+    await flipRoutes(target, hostnames, route, headers);
     await pointDns(target.domains, aliasesChanged);
     const schedules = await reconcileSchedules(target, alias.arn, schedulerRole.arn);
     if (schedules.kept || schedules.removed) log(`  ${schedules.kept} schedules, ${schedules.removed} removed`);
 
-    step("record");
-    record.status = "live";
-    record.finishedAt = new Date().toISOString();
-    await Promise.all([
-      writeDeploy(record),
-      writeCurrent(target, { deployId, version, since: record.finishedAt }),
-      updateRegistry(target, functionUrl, hostnames),
-      previous ? supersede(target, previous.deployId) : Promise.resolve(),
-    ]);
-    await github.succeed(`https://${target.primaryHost}`);
-    await prune(target, sites);
-
-    const seconds = Math.round((Date.now() - started) / 1000);
-    log(`\nLive at https://${target.primaryHost} (${seconds}s)`);
-    for (const host of hostnames.slice(1)) log(`        https://${host}`);
+    await finish(target, record, previous?.deployId, functionUrl, hostnames, github, sites, started);
   } catch (error) {
     record.finishedAt = new Date().toISOString();
     record.error = error instanceof Error ? error.message : String(error);
@@ -185,6 +194,59 @@ export async function release(target: Target, options: ReleaseOptions) {
     await github.fail();
     throw error;
   }
+}
+
+/** What a static deploy records as its version: there is no function to have one. */
+export const STATIC_VERSION = "static";
+
+async function uploadStatic(target: Target, staticDir: string, deployId: string, previousId: string | undefined) {
+  const { sites } = await buckets();
+  const prefix = names.deployPrefix(target.project, target.stage, deployId);
+  const previousPrefix = previousId ? names.deployPrefix(target.project, target.stage, previousId) : undefined;
+  const uploaded = existsSync(staticDir)
+    ? await uploadDirectory(sites, staticDir, prefix, previousPrefix)
+    : { uploaded: 0, copied: 0, bytes: 0 };
+  log(`  ${uploaded.uploaded} files uploaded (${formatBytes(uploaded.bytes)}), ${uploaded.copied} unchanged`);
+}
+
+/** The deploy's headers and every hostname's route in one write: the stage flips at once. */
+async function flipRoutes(
+  target: Target,
+  hostnames: readonly string[],
+  route: RouteRecord,
+  headers: string | undefined,
+) {
+  const record = JSON.stringify(headers ? { ...route, h: 1 } : route);
+  const puts: Record<string, string> = Object.fromEntries(hostnames.map((host) => [host, record]));
+  if (headers) puts[headersKey(target.project, route.d)] = headers;
+  await updateKeys(puts);
+}
+
+async function finish(
+  target: Target,
+  record: DeployRecord,
+  previousId: string | undefined,
+  functionUrl: string,
+  hostnames: readonly string[],
+  github: Awaited<ReturnType<typeof startGithubDeployment>>,
+  sites: string,
+  started: number,
+) {
+  step("record");
+  record.status = "live";
+  record.finishedAt = new Date().toISOString();
+  await Promise.all([
+    writeDeploy(record),
+    writeCurrent(target, { deployId: record.id, version: record.version, since: record.finishedAt }),
+    updateRegistry(target, functionUrl, hostnames),
+    previousId ? supersede(target, previousId) : Promise.resolve(),
+  ]);
+  await github.succeed(`https://${target.primaryHost}`);
+  await prune(target, sites);
+
+  const seconds = Math.round((Date.now() - started) / 1000);
+  log(`\nLive at https://${target.primaryHost} (${seconds}s)`);
+  for (const host of hostnames.slice(1)) log(`        https://${host}`);
 }
 
 /** Calls the new version straight through Lambda with the request the edge would make. */
@@ -227,11 +289,23 @@ async function prune(target: Target, sites: string) {
     await deletePrefix(sites, names.codeKey(target.project, target.stage, deploy.id));
     await deletePrefix(sites, names.deployRecord(target.project, target.stage, deploy.id));
   }
+  // Headers of deploys no route can point at again.
+  const keptHeaders = new Set(
+    deploys.slice(0, KEEP_DEPLOYS).map((deploy) => headersKey(target.project, `${target.stage}/${deploy.id}`)),
+  );
+  const staleHeaders = (await keysWithPrefix(headersKey(target.project, `${target.stage}/`))).filter(
+    (key) => !keptHeaders.has(key),
+  );
+  if (staleHeaders.length) await updateKeys({}, staleHeaders);
   // Static prefixes with no record — a deploy that died before recording — go too.
   const known = new Set(deploys.slice(0, KEEP_DEPLOYS).map((deploy) => deploy.id));
   for (const prefix of await listPrefixes(sites, names.stagePrefix(target.project, target.stage))) {
     const id = prefix.slice(names.stagePrefix(target.project, target.stage).length, -1);
     if (!known.has(id)) await deletePrefix(sites, prefix);
+  }
+  if (target.isStatic) {
+    if (stale.length) log(`  pruned ${stale.length} old deploys`);
+    return;
   }
   const live = await liveVersion(target.functionName);
   for (const version of await listVersions(target.functionName)) {

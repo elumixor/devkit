@@ -18,6 +18,8 @@ export interface WebBuildOptions {
   include?: Record<string, string>;
   /** Who serves the result: Vercel's build output API, or Devkit Cloud's S3 + Lambda (default `vercel`). */
   host?: "vercel" | "aws";
+  /** Static files only, no Nitro API (`aws` host only; the target sets it when `apiPrefixes` is empty). */
+  static?: boolean;
 }
 
 /** Where the `aws` host's build lands, relative to the repo root. */
@@ -34,7 +36,12 @@ export async function buildWeb(options: WebBuildOptions) {
   const backend = resolve(root, options.backendDir ?? "apps/backend");
   const webBuild = join(frontend, options.webBuildDir ?? "build");
 
-  await $`bun run build`.cwd(frontend);
+  // A site of hand-written files (a `public/` folder) has nothing to build.
+  const scripts = existsSync(join(frontend, "package.json"))
+    ? ((await Bun.file(join(frontend, "package.json")).json()) as { scripts?: Record<string, string> }).scripts
+    : undefined;
+  if (scripts?.build) await $`bun run build`.cwd(frontend);
+  else console.log(`No build script in ${frontend} — serving ${webBuild} as is`);
   if (!existsSync(webBuild)) throw new Error(`No web build at ${webBuild} — did the web build land?`);
 
   if (options.host === "aws") return buildForAws(root, backend, webBuild, options);
@@ -74,6 +81,10 @@ async function buildForAws(root: string, backend: string, webBuild: string, opti
   await mkdir(output, { recursive: true });
   await cp(webBuild, staticDir, { recursive: true });
   await copyIncluded(root, staticDir, options.include);
+  if (options.static) {
+    console.log(`Static files in ${AWS_OUTPUT}/static, no function`);
+    return;
+  }
 
   await rm(nitroOutput, { recursive: true, force: true });
   await $`bun ${join(import.meta.dir, "../cloud/nitro-build.ts")} ${backend}`;

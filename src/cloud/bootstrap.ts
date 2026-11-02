@@ -15,6 +15,7 @@ import {
   ensureCachePolicy,
   ensureKeyValueStore,
   ensureOriginAccessControl,
+  ensureRouterAssociations,
   ensureRouterFunction,
 } from "./reconcile/platform.ts";
 import { buckets } from "./reconcile/s3.ts";
@@ -64,6 +65,7 @@ export async function bootstrap(options: BootstrapOptions = {}) {
         routerArn,
         certificateArn,
       });
+  const associations = existing ? await ensureRouterAssociations(distribution.id, routerArn) : { changed: false };
   await Promise.all([
     allowDistribution(sites, distribution.arn, "*"),
     allowDistribution(blobs, distribution.arn, "*/*/public/*"),
@@ -88,7 +90,7 @@ export async function bootstrap(options: BootstrapOptions = {}) {
   await ensureBudgets(email);
   await ensureAnomalyAlerts(email);
 
-  if (!existing) {
+  if (!existing || associations.changed) {
     log("\nwaiting for the distribution to deploy (10–15 minutes the first time)");
     await waitDeployed(distribution.id);
   }

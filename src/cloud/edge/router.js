@@ -1,6 +1,7 @@
 // The Devkit Cloud router: one CloudFront Function (JavaScript runtime 2.0) on the viewer-request
-// event of the shared distribution. It reads the hostname's route record from the KeyValueStore
-// and sends the request to that project's function, its deploy's static files, or its public blobs.
+// and viewer-response events of the shared distribution. On a request it reads the hostname's route
+// record from the KeyValueStore and sends the request to that project's function, its deploy's
+// static files, or its public blobs. On a response it adds the deploy's configured headers, if any.
 //
 // Deployed by `devkit cloud bootstrap`; the header and key names are the ones in src/cloud/names.ts.
 import cf from "cloudfront";
@@ -13,6 +14,7 @@ var HOST_HEADER = "x-dk-host";
 var PROJECT_HEADER = "x-dk-project";
 var BLOB_PREFIX = "/_blob/";
 var SSR_ASSETS_PREFIX = "/_app/";
+var HEADERS_PREFIX = "_h/";
 var NO_SITE = {
   statusCode: 404,
   statusDescription: "Not Found",
@@ -21,6 +23,7 @@ var NO_SITE = {
 };
 
 async function handler(event) {
+  if (event.context.eventType === "viewer-response") return withHeaders(event);
   var request = event.request;
   var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
 
@@ -83,4 +86,26 @@ function staticPath(uri, mode) {
   if (last.indexOf(".") !== -1) return uri;
   if (mode === "pages") return (uri.slice(-1) === "/" ? uri : uri + "/") + "index.html";
   return "/index.html";
+}
+
+// The request here is the viewer's own, before the rewrite, so rules match the path the viewer asked for.
+async function withHeaders(event) {
+  var response = event.response;
+  var request = event.request;
+  var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
+  try {
+    var record = await routes.get(host);
+    var route = JSON.parse(record);
+    if (!route.h) return response;
+    var raw = await routes.get(HEADERS_PREFIX + route.p + "/" + route.d);
+    var rules = JSON.parse(raw);
+    for (var i = 0; i < rules.length; i++) {
+      if (!new RegExp(rules[i][0]).test(request.uri)) continue;
+      var names = Object.keys(rules[i][1]);
+      for (var j = 0; j < names.length; j++) response.headers[names[j]] = { value: rules[i][1][names[j]] };
+    }
+  } catch (e) {
+    // No route or no headers: the response goes out as the origin made it.
+  }
+  return response;
 }

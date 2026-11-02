@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import type { WebBuildOptions } from "../build-targets/web.ts";
 import { CloudError } from "./aws.ts";
+import type { HeaderRule } from "./headers.ts";
 import { stage as names, PRODUCTION, STAGE_BRANCHES } from "./names.ts";
 
 /** One scheduled call into the API, in the shape Vercel's `vercel.json` used. */
@@ -21,7 +22,7 @@ export interface Permission {
 }
 
 /** The `aws` deploy target's options, in the `devkit.deploy.<name>.options` block. */
-export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
+export interface AwsTargetOptions extends Omit<WebBuildOptions, "host" | "static"> {
   /** Project name: resource names, bucket prefixes and the default hostname (default: repo name). */
   project?: string;
   /** How the edge serves paths that aren't the API (default `spa`). */
@@ -47,6 +48,8 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   terraform?: TerraformConfig;
   /** Extra IAM statements for the function — an app that reads other AWS resources, like the dashboard. */
   permissions?: Permission[];
+  /** Response headers by path, as in `vercel.json` — CORS on a script other sites load, say. */
+  headers?: HeaderRule[];
 }
 
 /**
@@ -124,6 +127,13 @@ export class Target {
   }
   get permissions(): readonly Permission[] {
     return this.options.permissions ?? [];
+  }
+  get headers(): readonly HeaderRule[] {
+    return this.options.headers ?? [];
+  }
+  /** No API paths and no SSR: only static files, so no function, role, schedules or health check. */
+  get isStatic() {
+    return this.apiPrefixes.length === 0 && this.routing !== "ssr";
   }
   get isProduction() {
     return this.stage === PRODUCTION;

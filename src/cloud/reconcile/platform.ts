@@ -7,9 +7,11 @@ import {
   DescribeFunctionCommand,
   DescribeKeyValueStoreCommand,
   type DistributionConfig,
+  GetDistributionConfigCommand,
   ListCachePoliciesCommand,
   ListOriginAccessControlsCommand,
   PublishFunctionCommand,
+  UpdateDistributionCommand,
   UpdateFunctionCommand,
 } from "@aws-sdk/client-cloudfront";
 import {
@@ -255,7 +257,7 @@ export function distributionConfig(inputs: DistributionInputs): DistributionConf
       Compress: true,
       CachePolicyId: inputs.cachePolicyId,
       OriginRequestPolicyId: platform.originRequestPolicyId,
-      FunctionAssociations: { Quantity: 1, Items: [{ EventType: "viewer-request", FunctionARN: inputs.routerArn }] },
+      FunctionAssociations: routerAssociations(inputs.routerArn),
     },
     DefaultRootObject: "",
     Restrictions: { GeoRestriction: { RestrictionType: "none", Quantity: 0 } },
@@ -278,4 +280,43 @@ export async function createDistribution(inputs: DistributionInputs): Promise<Di
     domainName: distribution.DomainName,
     aliases: distribution.DistributionConfig?.Aliases?.Items ?? [],
   };
+}
+
+/** The router runs on both viewer events: routing the request, then adding the deploy's response headers. */
+function routerAssociations(routerArn: string) {
+  return {
+    Quantity: 2,
+    Items: [
+      { EventType: "viewer-request" as const, FunctionARN: routerArn },
+      { EventType: "viewer-response" as const, FunctionARN: routerArn },
+    ],
+  };
+}
+
+/** Brings an existing distribution's router associations up to date — one made before response headers existed. */
+export async function ensureRouterAssociations(distributionId: string, routerArn: string) {
+  const { DistributionConfig: config, ETag } = await cloudfront().send(
+    new GetDistributionConfigCommand({ Id: distributionId }),
+  );
+  if (!config?.DefaultCacheBehavior || !ETag) throw new CloudError("CloudFront returned no distribution config");
+  const wanted = routerAssociations(routerArn);
+  const current = config.DefaultCacheBehavior.FunctionAssociations?.Items ?? [];
+  const same =
+    current.length === wanted.Items.length &&
+    wanted.Items.every((item) =>
+      current.some((have) => have.EventType === item.EventType && have.FunctionARN === item.FunctionARN),
+    );
+  if (same) return { changed: false };
+  await cloudfront().send(
+    new UpdateDistributionCommand({
+      Id: distributionId,
+      IfMatch: ETag,
+      DistributionConfig: {
+        ...config,
+        DefaultCacheBehavior: { ...config.DefaultCacheBehavior, FunctionAssociations: wanted },
+      },
+    }),
+  );
+  log("  router on viewer-request and viewer-response");
+  return { changed: true };
 }

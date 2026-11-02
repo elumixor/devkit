@@ -77,15 +77,31 @@ function zoneFor(hostname: string) {
  */
 export async function ensureRecord(name: string, type: "CNAME" | "TXT", content: string) {
   const zone = await zoneFor(name);
-  const existing = await findRecord(zone, name, type);
+  // A CNAME can't sit beside an A or AAAA record, so it takes one over in place (a host moving from
+  // another provider's IP): the same record changes type, with no moment the name doesn't resolve.
+  const existing =
+    (await findRecord(zone, name, type)) ?? (type === "CNAME" ? await findAddress(zone, name) : undefined);
   const body = { type, name, content, proxied: false, ttl: 300, comment: "devkit cloud" };
   if (!existing) {
     await call("POST", `/zones/${zone}/dns_records`, body);
     return "created";
   }
-  if (matches(existing, content)) return "unchanged";
+  if (existing.type === type && matches(existing, content)) return "unchanged";
   await call("PUT", `/zones/${zone}/dns_records/${existing.id}`, body);
+  if (existing.type !== type) {
+    for (const other of await call<CloudflareRecord[]>(
+      "GET",
+      `/zones/${zone}/dns_records?name=${encodeURIComponent(name)}`,
+    ))
+      if ((other.type === "A" || other.type === "AAAA") && other.id !== existing.id)
+        await call("DELETE", `/zones/${zone}/dns_records/${other.id}`);
+    return `replaced ${existing.type}`;
+  }
   return "updated";
+}
+
+async function findAddress(zone: string, name: string) {
+  return (await findRecord(zone, name, "A")) ?? (await findRecord(zone, name, "AAAA"));
 }
 
 async function findRecord(zone: string, name: string, type: string) {
