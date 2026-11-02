@@ -266,7 +266,13 @@ export async function deployPolicy(): Promise<PolicyDocument> {
   };
 }
 
-/** The role GitHub Actions assumes: only `elumixor/*` repos, only on the branches that deploy. */
+/** elumixor's GitHub account id, which repos made since GitHub's immutable OIDC subjects name instead of a path. */
+const GITHUB_OWNER_ID = 12294750;
+
+/**
+ * The role GitHub Actions assumes: only `elumixor/*` repos, only on the branches that deploy. Older repos send
+ * `repo:elumixor/<repo>:…`, newer ones `repo:elumixor@<owner id>/<repo>@<repo id>:…`.
+ */
 export async function ensureDeployRole(branches: readonly string[]) {
   const account = await accountId();
   const policyArn = await ensureManagedPolicy(platform.deployPolicy, await deployPolicy());
@@ -282,9 +288,10 @@ export async function ensureDeployRole(branches: readonly string[]) {
           Condition: {
             StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
             StringLike: {
-              "token.actions.githubusercontent.com:sub": branches.map(
-                (branch) => `repo:elumixor/*:ref:refs/heads/${branch}`,
-              ),
+              "token.actions.githubusercontent.com:sub": branches.flatMap((branch) => [
+                `repo:elumixor/*:ref:refs/heads/${branch}`,
+                `repo:elumixor@${GITHUB_OWNER_ID}/*:ref:refs/heads/${branch}`,
+              ]),
             },
           },
         },
