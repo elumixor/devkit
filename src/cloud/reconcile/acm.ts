@@ -26,6 +26,8 @@ export async function ensureCertificate(names: readonly string[]): Promise<strin
       SubjectAlternativeNames: wanted.length > 1 ? wanted.slice(1) : undefined,
       ValidationMethod: "DNS",
       KeyAlgorithm: "EC_prime256v1",
+      // Without a fresh token ACM hands back the same request for an hour, even one that has failed.
+      IdempotencyToken: Date.now().toString(36),
       Tags: platformTags(),
     }),
   );

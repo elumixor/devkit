@@ -257,6 +257,7 @@ export async function deployPolicy(): Promise<PolicyDocument> {
           "acm:DescribeCertificate",
           "acm:RequestCertificate",
           "acm:AddTagsToCertificate",
+          "acm:ListTagsForCertificate",
           "acm:DeleteCertificate",
         ],
         Resource: "*",
