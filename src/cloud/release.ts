@@ -99,6 +99,8 @@ export async function release(target: Target, options: ReleaseOptions) {
       log("  made a CRON_SECRET for the stage");
     }
     const env: Env = {
+      // What Vercel sets on every deployment, so `NODE_ENV === "production"` checks read the same here.
+      NODE_ENV: "production",
       ...stageEnv,
       DK_PROJECT: target.project,
       DK_STAGE: target.stage,
