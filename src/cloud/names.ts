@@ -11,8 +11,10 @@ export const REGION = "eu-central-1";
 export const GLOBAL_REGION = "us-east-1";
 
 /** The apex every default hostname hangs off. */
-export const BASE_DOMAIN = "dk.atmagaming.com";
+export const BASE_DOMAIN = "devkit.atmagaming.com";
 export const WILDCARD_DOMAIN = `*.${BASE_DOMAIN}`;
+/** The aliases the distribution always carries: every default hostname, and the apex the dashboard answers on. */
+export const PLATFORM_ALIASES = [WILDCARD_DOMAIN, BASE_DOMAIN] as const;
 
 /** Stage names and the branches that deploy them, matching today's Vercel setup. */
 export const STAGE_BRANCHES: Readonly<Record<string, string>> = { production: "main", development: "develop" };

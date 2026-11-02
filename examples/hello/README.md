@@ -1,7 +1,7 @@
 # hello
 
 The project Devkit Cloud is tested against: a static page, a Nitro API, blob storage, work after
-the response, a 90-second stream and a cron, deployed to `hello.dk.atmagaming.com`.
+the response, a 90-second stream and a cron, deployed to `hello.devkit.atmagaming.com`.
 
 ```bash
 bun link                  # once, in the devkit root: the example uses this checkout's devkit

@@ -10,13 +10,19 @@
     <header>
       <h1>Devkit Cloud</h1>
       <div class="controls">
-        <input id="token" type="password" placeholder="dashboard token" autocomplete="off" />
-        <button id="refresh" title="Reload">↻</button>
         <span id="updated" class="muted"></span>
+        <button id="refresh" title="Reload">↻</button>
+        <span id="who" class="muted"></span>
+        <button id="sign-out" hidden>Sign out</button>
       </div>
     </header>
 
-    <main>
+    <section id="sign-in" class="sign-in" hidden>
+      <div id="sign-in-widget"></div>
+      <p class="muted">Signs in with your desk account (the same one as people.desk.atmagaming.com).</p>
+    </section>
+
+    <main hidden>
       <section id="projects" class="projects"></section>
       <section id="detail" class="detail" hidden>
         <div class="detail-head">

@@ -1,10 +1,10 @@
 import { $ } from "bun";
 import { accountId, CloudError, log } from "./aws.ts";
 import { ensureSecret, readParameter, writeParameter } from "./env.ts";
-import { BASE_DOMAIN, platform, STAGE_BRANCHES, WILDCARD_DOMAIN } from "./names.ts";
+import { PLATFORM_ALIASES, platform, STAGE_BRANCHES } from "./names.ts";
 import { ensureCertificate } from "./reconcile/acm.ts";
 import { ensureRecord } from "./reconcile/cloudflare.ts";
-import { findDistribution, waitDeployed } from "./reconcile/edge.ts";
+import { findDistribution, reconcileAliases, waitDeployed } from "./reconcile/edge.ts";
 import { ensureAnomalyAlerts, ensureBudgets } from "./reconcile/guardrails.ts";
 import { ensureDeployRole, ensureLocalDeployProfile, ensureSchedulerRole } from "./reconcile/iam.ts";
 import { putEdgeSecret } from "./reconcile/kvs.ts";
@@ -52,26 +52,26 @@ export async function bootstrap(options: BootstrapOptions = {}) {
   ]);
   await putEdgeSecret(edgeSecret);
   const routerArn = await ensureRouterFunction(kvsArn);
-  const certificateArn = await ensureCertificate([WILDCARD_DOMAIN, BASE_DOMAIN]);
+  const certificateArn = await ensureCertificate(PLATFORM_ALIASES);
   const existing = await findDistribution();
-  const distribution =
-    existing ??
-    (await createDistribution({
-      sitesBucket: sites,
-      blobsBucket: blobs,
-      oacId,
-      cachePolicyId,
-      routerArn,
-      certificateArn,
-    }));
+  const distribution = existing
+    ? await reconcileAliases([])
+    : await createDistribution({
+        sitesBucket: sites,
+        blobsBucket: blobs,
+        oacId,
+        cachePolicyId,
+        routerArn,
+        certificateArn,
+      });
   await Promise.all([
     allowDistribution(sites, distribution.arn, "*"),
     allowDistribution(blobs, distribution.arn, "*/*/public/*"),
   ]);
 
   log("\ndns");
-  const dns = await ensureRecord(WILDCARD_DOMAIN, "CNAME", distribution.domainName);
-  log(`  ${WILDCARD_DOMAIN} → ${distribution.domainName} ${dns}`);
+  for (const name of PLATFORM_ALIASES)
+    log(`  ${name} → ${distribution.domainName} ${await ensureRecord(name, "CNAME", distribution.domainName)}`);
 
   log("\naccess");
   await ensureScheduleGroup();

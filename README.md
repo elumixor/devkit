@@ -220,7 +220,7 @@ waiting for it to build the same thing again. Options: `cwd`.
 
 **`aws`** is Devkit Cloud: the same web build, served from our own AWS account instead of Vercel.
 The static files go to S3, the Nitro API to one Lambda function behind a shared CloudFront
-distribution, and the stage is live at `<project>.dk.atmagaming.com` (or `<project>-dev.…` for
+distribution, and the stage is live at `<project>.devkit.atmagaming.com` (or `<project>-dev.…` for
 `development`). See [Devkit Cloud](#devkit-cloud).
 
 **`tauri-macos`** builds, signs and notarizes the macOS app if this machine has a Developer ID
@@ -272,7 +272,7 @@ devkit cloud status               # what is live, with calls, errors and p95 for
 devkit cloud logs --follow        # CloudWatch logs for the stage
 devkit cloud deploys <project>    # the last ten deploys
 devkit cloud rollback <project>   # back to the previous deploy, in seconds
-devkit cloud domains add <project> <host>
+devkit cloud domains add <project> <host>   # cert, alias, Cloudflare DNS, route; later deploys keep it
 devkit cloud destroy <project> --stage development
 ```
 
@@ -289,15 +289,18 @@ exercises every feature; it and the dashboard are what `.github/workflows/deploy
 
 ### Dashboard and MCP
 
-[dashboard.dk.atmagaming.com](https://dashboard.dk.atmagaming.com) (`apps/dashboard`) shows every
-project and stage, what is live, the last day's calls, errors and p95, the deploy history and the
-function logs. It is itself a project on the platform; its function may read the deploy records,
-CloudWatch metrics and `dk-*` log groups through the `permissions` option, and one shared token
-(`DASHBOARD_TOKEN` in the stage's env) guards its API. Read-only: deploys and rollbacks stay with
-the CLI and MCP.
+[devkit.atmagaming.com](https://devkit.atmagaming.com) (`apps/dashboard`) shows every project and
+stage, what is live, the last day's calls, errors and p95, the deploy history and the function
+logs. It is itself a project on the platform; its function may read the deploy records, CloudWatch
+metrics and `dk-*` log groups through the `permissions` option. Sign-in is the desk suite's Clerk
+account: Clerk's Frontend API at clerk.desk.atmagaming.com is same-site with devkit.atmagaming.com,
+so the session carries over without a satellite domain. The API accepts a session whose email is on
+`DASHBOARD_EMAILS`, or `DASHBOARD_TOKEN` as a bearer for scripts. Read-only: deploys and rollbacks
+stay with the CLI and MCP.
 
 `devkit mcp` serves the same over the Model Context Protocol on stdio — `cloud_status`,
-`cloud_deploys`, `cloud_logs`, `cloud_rollback`, `cloud_env` (keys only) and `cloud_domains` — so
+`cloud_deploys`, `cloud_logs`, `cloud_rollback`, `cloud_env` (keys only), `cloud_domains`,
+`cloud_domain_add` and `cloud_domain_remove` — so
 an agent can check and undo a deploy. Register it once:
 
 ```bash

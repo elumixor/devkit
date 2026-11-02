@@ -20,7 +20,7 @@ import {
   PutPublicAccessBlockCommand,
 } from "@aws-sdk/client-s3";
 import { CloudError, cloudfront, log, orUndefined, platformTags, s3, waitFor } from "../aws.ts";
-import { BASE_DOMAIN, ORIGINS, PROJECT_HEADER, platform, REGION, WILDCARD_DOMAIN } from "../names.ts";
+import { ORIGINS, PLATFORM_ALIASES, PROJECT_HEADER, platform, REGION } from "../names.ts";
 import { DISTRIBUTION_COMMENT, type Distribution } from "./edge.ts";
 
 /** A private bucket in the home region; nothing in it is reachable except through CloudFront or the SDK. */
@@ -233,7 +233,7 @@ export function distributionConfig(inputs: DistributionInputs): DistributionConf
     HttpVersion: "http2and3",
     IsIPV6Enabled: true,
     PriceClass: "PriceClass_100",
-    Aliases: { Quantity: 2, Items: [WILDCARD_DOMAIN, BASE_DOMAIN] },
+    Aliases: { Quantity: PLATFORM_ALIASES.length, Items: [...PLATFORM_ALIASES] },
     ViewerCertificate: {
       ACMCertificateArn: inputs.certificateArn,
       SSLSupportMethod: "sni-only",

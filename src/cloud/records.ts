@@ -29,10 +29,17 @@ export interface CurrentPointer {
 /** One project's stages as last deployed — what `status` lists without reading every record. */
 export interface ProjectRegistry {
   project: string;
-  stages: Record<
-    string,
-    { functionName: string; functionUrl: string; hostnames: readonly string[]; updatedAt: string }
-  >;
+  stages: Record<string, RegisteredStage>;
+}
+
+export interface RegisteredStage {
+  functionName: string;
+  functionUrl: string;
+  /** Every hostname the stage answers on, the primary one first. */
+  hostnames: readonly string[];
+  /** Hostnames added with `devkit cloud domains add` rather than the config; each deploy keeps them. */
+  extraHostnames?: readonly string[];
+  updatedAt: string;
 }
 
 export async function readCurrent(target: Target) {
@@ -63,8 +70,15 @@ export async function readRegistry(project: string) {
   return getJson<ProjectRegistry>((await buckets()).sites, registryKey(project));
 }
 
-export async function updateRegistry(target: Target, functionUrl: string) {
+/** What a deploy serves: the config's hostnames, then any added from the CLI since. */
+export async function deployHostnames(target: Target) {
+  const extra = (await readRegistry(target.project))?.stages[target.stage]?.extraHostnames ?? [];
+  return [...new Set([...target.hostnames, ...extra])];
+}
+
+export async function updateRegistry(target: Target, functionUrl: string, hostnames: readonly string[]) {
   const registry = (await readRegistry(target.project)) ?? { project: target.project, stages: {} };
+  const previous = registry.stages[target.stage];
   await putJson((await buckets()).sites, registryKey(target.project), {
     ...registry,
     stages: {
@@ -72,7 +86,8 @@ export async function updateRegistry(target: Target, functionUrl: string) {
       [target.stage]: {
         functionName: target.functionName,
         functionUrl,
-        hostnames: target.hostnames,
+        hostnames,
+        extraHostnames: previous?.extraHostnames,
         updatedAt: new Date().toISOString(),
       },
     },
@@ -93,13 +108,22 @@ export async function listProjects() {
   return registries.filter((registry): registry is ProjectRegistry => registry !== undefined);
 }
 
-/** Hostnames changed outside a deploy, by `devkit cloud domains`. */
-export async function updateRegistryHostnames(target: Target, hostnames: readonly string[]) {
+/** A hostname added or removed outside a deploy, by `devkit cloud domains`. */
+export async function updateRegistryHostname(target: Target, host: string, present: boolean) {
   const registry = await readRegistry(target.project);
   const entry = registry?.stages[target.stage];
   if (!registry || !entry) return;
+  const without = (names: readonly string[]) => names.filter((name) => name !== host);
   await putJson((await buckets()).sites, registryKey(target.project), {
     ...registry,
-    stages: { ...registry.stages, [target.stage]: { ...entry, hostnames, updatedAt: new Date().toISOString() } },
+    stages: {
+      ...registry.stages,
+      [target.stage]: {
+        ...entry,
+        hostnames: present ? [...without(entry.hostnames), host] : without(entry.hostnames),
+        extraHostnames: present ? [...without(entry.extraHostnames ?? []), host] : without(entry.extraHostnames ?? []),
+        updatedAt: new Date().toISOString(),
+      },
+    },
   } satisfies ProjectRegistry);
 }

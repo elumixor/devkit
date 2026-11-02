@@ -300,3 +300,11 @@ pre#logs .err {
   padding: 1rem;
   color: var(--muted);
 }
+
+.sign-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+}

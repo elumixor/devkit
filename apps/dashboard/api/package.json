@@ -9,6 +9,7 @@
   "dependencies": {
     "@elumixor/devkit": "link:@elumixor/devkit",
     "h3": "^1.15.6",
+    "jose": "^6.2.15",
     "nitropack": "^2.13.4"
   }
 }

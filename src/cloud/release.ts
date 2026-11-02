@@ -27,6 +27,7 @@ import { buckets, deletePrefix, listPrefixes, uploadDirectory } from "./reconcil
 import { ensureScheduleGroup, reconcileSchedules } from "./reconcile/scheduler.ts";
 import {
   type DeployRecord,
+  deployHostnames,
   listDeploys,
   readCurrent,
   readDeploy,
@@ -65,6 +66,7 @@ export async function release(target: Target, options: ReleaseOptions) {
   if (!existsSync(serverDir)) throw new CloudError(`No build at ${serverDir} — the web build runs first`);
 
   const { sites, blobs } = await buckets();
+  const hostnames = await deployHostnames(target);
   const github = await startGithubDeployment(git.sha, target.stage, `${target.project} ${deployId}`);
   const record: DeployRecord = {
     id: deployId,
@@ -77,7 +79,7 @@ export async function release(target: Target, options: ReleaseOptions) {
     message: git.message,
     startedAt: new Date(started).toISOString(),
     status: "failed",
-    hostnames: target.hostnames,
+    hostnames,
   };
 
   try {
@@ -154,7 +156,7 @@ export async function release(target: Target, options: ReleaseOptions) {
       api: target.apiPrefixes,
       mode: target.routing,
     };
-    await putRoutes(Object.fromEntries(target.hostnames.map((host) => [host, route])));
+    await putRoutes(Object.fromEntries(hostnames.map((host) => [host, route])));
     const schedules = await reconcileSchedules(target, alias.arn, schedulerRole.arn);
     if (schedules.kept || schedules.removed) log(`  ${schedules.kept} schedules, ${schedules.removed} removed`);
 
@@ -164,7 +166,7 @@ export async function release(target: Target, options: ReleaseOptions) {
     await Promise.all([
       writeDeploy(record),
       writeCurrent(target, { deployId, version, since: record.finishedAt }),
-      updateRegistry(target, functionUrl),
+      updateRegistry(target, functionUrl, hostnames),
       previous ? supersede(target, previous.deployId) : Promise.resolve(),
     ]);
     await github.succeed(`https://${target.primaryHost}`);
@@ -172,7 +174,7 @@ export async function release(target: Target, options: ReleaseOptions) {
 
     const seconds = Math.round((Date.now() - started) / 1000);
     log(`\nLive at https://${target.primaryHost} (${seconds}s)`);
-    for (const host of target.hostnames.slice(1)) log(`        https://${host}`);
+    for (const host of hostnames.slice(1)) log(`        https://${host}`);
   } catch (error) {
     record.finishedAt = new Date().toISOString();
     record.error = error instanceof Error ? error.message : String(error);

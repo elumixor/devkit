@@ -1,7 +1,7 @@
 // The Devkit Cloud dashboard: what is live, how it did today, its deploys and its logs. Everything
-// comes from /api/* on this same host; the token is kept in this browser only.
-const TOKEN_KEY = "dk.dashboard.token";
+// comes from /api/* on this same host, signed with the viewer's desk Clerk session.
 const REFRESH_MS = 60_000;
+const CLERK_LOAD_TIMEOUT_MS = 15_000;
 
 const $ = (selector) => document.querySelector(selector);
 const el = (tag, attrs = {}, ...children) => {
@@ -15,12 +15,13 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
-const state = { token: localStorage.getItem(TOKEN_KEY) ?? "", selected: null, view: "deploys" };
+const state = { clerk: null, selected: null, view: "deploys" };
 
 async function api(path, params = {}) {
   const query = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== "")));
+  const token = await state.clerk?.session?.getToken();
   const response = await fetch(`/api/${path}${query.size ? `?${query}` : ""}`, {
-    headers: { authorization: `Bearer ${state.token}` },
+    headers: token ? { authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -170,7 +171,7 @@ async function loadLogs() {
 }
 
 async function refresh() {
-  if (!state.token) return message("Enter the dashboard token to load projects", 8000);
+  if (!state.clerk?.user) return;
   try {
     renderProjects(await api("overview"));
     $("#updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
@@ -179,12 +180,6 @@ async function refresh() {
   }
 }
 
-$("#token").value = state.token;
-$("#token").addEventListener("change", (event) => {
-  state.token = event.target.value.trim();
-  localStorage.setItem(TOKEN_KEY, state.token);
-  refresh();
-});
 $("#refresh").addEventListener("click", refresh);
 $("#close").addEventListener("click", () => {
   $("#detail").hidden = true;
@@ -196,5 +191,62 @@ for (const button of document.querySelectorAll("[data-view]"))
 $("#load-logs").addEventListener("click", loadLogs);
 $("#grep").addEventListener("keydown", (event) => event.key === "Enter" && loadLogs());
 
-refresh();
-setInterval(refresh, REFRESH_MS);
+$("#sign-out").addEventListener("click", () => state.clerk?.signOut());
+
+/** The Frontend API host a publishable key names: `pk_live_<base64 of "clerk.desk.atmagaming.com$">`. */
+const frontendApi = (publishableKey) => atob(publishableKey.split("_")[2] ?? "").slice(0, -1);
+
+function script(src, attrs = {}) {
+  return new Promise((resolve, reject) => {
+    const node = el("script", { src, crossorigin: "anonymous", ...attrs });
+    node.onload = resolve;
+    node.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.append(node);
+  });
+}
+
+// Clerk's script reads the key off its own tag and makes window.Clerk; its prebuilt components come as a
+// separate bundle that a production instance only mounts when handed the constructor.
+async function startClerk(publishableKey) {
+  const host = frontendApi(publishableKey);
+  await script(`https://${host}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, { "data-clerk-publishable-key": publishableKey });
+  await script(`https://${host}/npm/@clerk/ui@1/dist/ui.browser.js`);
+  await Promise.race([
+    window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Sign-in did not load in time")), CLERK_LOAD_TIMEOUT_MS)),
+  ]);
+  return window.Clerk;
+}
+
+// Clerk calls its listeners on every session tick; the page only changes when the user does.
+let shownUserId;
+function showSignedIn(clerk) {
+  const userId = clerk.user?.id ?? null;
+  if (userId === shownUserId) return;
+  shownUserId = userId;
+  const signedIn = Boolean(userId);
+  $("main").hidden = !signedIn;
+  $("#sign-in").hidden = signedIn;
+  $("#sign-out").hidden = !signedIn;
+  $("#who").textContent = clerk.user?.primaryEmailAddress?.emailAddress ?? "";
+  if (signedIn) {
+    clerk.unmountSignIn($("#sign-in-widget"));
+    return refresh();
+  }
+  clerk.mountSignIn($("#sign-in-widget"), { forceRedirectUrl: location.href, signUpForceRedirectUrl: location.href });
+}
+
+async function start() {
+  try {
+    const { clerkPublishableKey } = await (await fetch("/api/config")).json();
+    if (!clerkPublishableKey) throw new Error("This stage has no CLERK_PUBLISHABLE_KEY");
+    state.clerk = await startClerk(clerkPublishableKey);
+    state.clerk.addListener(() => showSignedIn(state.clerk));
+    showSignedIn(state.clerk);
+    setInterval(refresh, REFRESH_MS);
+  } catch (error) {
+    message(error.message, 60_000);
+  }
+}
+
+start();

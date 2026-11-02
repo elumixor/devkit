@@ -32,7 +32,7 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   timeout?: number;
   /** Scheduled calls into the API. */
   crons?: CronConfig[];
-  /** Custom hostnames per stage, besides the default `<project>.dk.atmagaming.com`. */
+  /** Custom hostnames per stage, besides the default `<project>.devkit.atmagaming.com`. */
   domains?: Record<string, string[]>;
   /** Shell command run with the stage's env after the code is published and before it goes live — migrations. */
   predeploy?: string;

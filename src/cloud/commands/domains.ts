@@ -3,54 +3,66 @@ import { CloudError, log } from "../aws.ts";
 import { deleteRecord } from "../reconcile/cloudflare.ts";
 import { needsAlias, reconcileAliases } from "../reconcile/edge.ts";
 import { deleteRoute, getRoute, putRoutes } from "../reconcile/kvs.ts";
-import { readRegistry, updateRegistryHostnames } from "../records.ts";
+import { readRegistry, updateRegistryHostname } from "../records.ts";
 import { targetByName } from "./context.ts";
 
+const USAGE = "usage: devkit cloud domains ls|add|rm <project> [host] [--stage s]";
+
+/** Every hostname each stage of a project answers on, the primary one first. */
+export async function listDomains(project: string) {
+  const registry = await readRegistry(project);
+  if (!registry) throw new CloudError(`No project "${project}" has been deployed`);
+  return Object.fromEntries(Object.entries(registry.stages).map(([stage, entry]) => [stage, entry.hostnames]));
+}
+
 /**
- * Hostnames outside the config — while a DNS move is in flight, say. `add` wires the certificate,
- * alias, DNS and route; `rm` takes them away. The config's `domains` are applied on every deploy.
+ * Points one more hostname at a stage without a redeploy: certificate, alias, DNS and route. Later
+ * deploys keep it. A hostname in a Cloudflare zone the platform token can edit needs nothing else.
  */
+export async function addDomain(project: string, host: string, stageFlag?: string) {
+  const { target, recorded } = await targetByName(project, stageFlag);
+  const route = await getRoute(recorded.hostnames[0] as string);
+  if (!route) throw new CloudError(`No route record for ${recorded.hostnames[0]} — deploy once first`);
+  await reconcileAliases([host]);
+  await putRoutes({ [host]: route });
+  await updateRegistryHostname(target, host, true);
+  return `https://${host} now serves ${project} ${target.stage} (new hostnames reach every edge within ~1 min)`;
+}
+
+/** Takes a hostname off a stage: route, alias and DNS record. The default hostname stays. */
+export async function removeDomain(project: string, host: string, stageFlag?: string) {
+  const { target } = await targetByName(project, stageFlag);
+  if (host === target.defaultHost) throw new CloudError(`${host} is the stage's default hostname and stays`);
+  await deleteRoute(host);
+  if (needsAlias(host)) {
+    await reconcileAliases([], [host]);
+    await deleteRecord(host, "CNAME");
+  }
+  await updateRegistryHostname(target, host, false);
+  return `${host} removed from ${project} ${target.stage} (a host listed in the config's \`domains\` returns on the next deploy)`;
+}
+
 export async function domains(
   action: string | undefined,
   project: string | undefined,
   host: string | undefined,
   stageFlag: string | undefined,
 ) {
-  if (!project) throw new CloudError("usage: devkit cloud domains ls|add|rm <project> [host] [--stage s]");
-  const { target, recorded } = await targetByName(project, stageFlag);
-
+  if (!project) throw new CloudError(USAGE);
   switch (action) {
     case "ls": {
-      const registry = await readRegistry(project);
       log(bold(project));
-      for (const [stage, entry] of Object.entries(registry?.stages ?? {}))
-        log(`  ${stage.padEnd(12)} ${entry.hostnames.map((name, i) => (i ? dim(name) : name)).join("  ")}`);
+      for (const [stage, hostnames] of Object.entries(await listDomains(project)))
+        log(`  ${stage.padEnd(12)} ${hostnames.map((name, i) => (i ? dim(name) : name)).join("  ")}`);
       return;
     }
-    case "add": {
-      if (!host) throw new CloudError("usage: devkit cloud domains add <project> <host>");
-      const route = await getRoute(recorded.hostnames[0] as string);
-      if (!route) throw new CloudError(`No route record for ${recorded.hostnames[0]} — deploy once first`);
-      await reconcileAliases([host]);
-      await putRoutes({ [host]: route });
-      await updateRegistryHostnames(target, [host, ...recorded.hostnames.filter((name) => name !== host)]);
-      return log(`https://${host} now serves ${project} ${target.stage}`);
-    }
-    case "rm": {
-      if (!host) throw new CloudError("usage: devkit cloud domains rm <project> <host>");
-      if (host === target.defaultHost) throw new CloudError(`${host} is the stage's default hostname and stays`);
-      await deleteRoute(host);
-      if (needsAlias(host)) {
-        await reconcileAliases([], [host]);
-        await deleteRecord(host, "CNAME");
-      }
-      await updateRegistryHostnames(
-        target,
-        recorded.hostnames.filter((name) => name !== host),
-      );
-      return log(`${host} removed from ${project} ${target.stage}`);
-    }
+    case "add":
+      if (!host) throw new CloudError(USAGE);
+      return log(await addDomain(project, host, stageFlag));
+    case "rm":
+      if (!host) throw new CloudError(USAGE);
+      return log(await removeDomain(project, host, stageFlag));
     default:
-      throw new CloudError("usage: devkit cloud domains ls|add|rm <project> [host] [--stage s]");
+      throw new CloudError(USAGE);
   }
 }

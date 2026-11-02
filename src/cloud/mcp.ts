@@ -3,11 +3,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import pkg from "../../package.json" with { type: "json" };
 import { targetByName } from "./commands/context.ts";
+import { addDomain, listDomains, removeDomain } from "./commands/domains.ts";
 import { rollback } from "./commands/rollback.ts";
 import { readStageEnv } from "./env.ts";
 import { fetchLogEvents, parseDuration } from "./log-events.ts";
 import { age, overview } from "./overview.ts";
-import { listDeploys, readRegistry } from "./records.ts";
+import { listDeploys } from "./records.ts";
 
 /**
  * `devkit mcp`: Devkit Cloud over the Model Context Protocol, so an agent can ask what is live,
@@ -15,6 +16,8 @@ import { listDeploys, readRegistry } from "./records.ts";
  * credentials are whatever the environment provides, as for the CLI.
  */
 export async function runMcp() {
+  // Stdout carries the protocol; the shared commands' progress lines go to stderr instead.
+  console.log = console.error;
   const server = new McpServer({ name: "devkit-cloud", version: pkg.version });
   const text = (value: unknown) => ({
     content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
@@ -116,17 +119,31 @@ export async function runMcp() {
     "cloud_domains",
     {
       title: "Hostnames",
-      description: "Every hostname each stage of a project answers on.",
+      description: "Every hostname each stage of a project answers on, the primary one first.",
       inputSchema: { project },
     },
-    async ({ project }) => {
-      const registry = await readRegistry(project);
-      return text(
-        registry
-          ? Object.fromEntries(Object.entries(registry.stages).map(([s, e]) => [s, e.hostnames]))
-          : `No project "${project}"`,
-      );
+    async ({ project }) => text(await listDomains(project)),
+  );
+
+  server.registerTool(
+    "cloud_domain_add",
+    {
+      title: "Add hostname",
+      description:
+        "Point a hostname at a stage: certificate, CloudFront alias, Cloudflare DNS record and route. Kept by later deploys. A new hostname may need a minute or two (longer when a certificate is issued).",
+      inputSchema: { project, host: z.string().describe("Hostname, e.g. app.example.com"), stage },
     },
+    async ({ project, host, stage }) => text(await addDomain(project, host, stage)),
+  );
+
+  server.registerTool(
+    "cloud_domain_remove",
+    {
+      title: "Remove hostname",
+      description: "Take a hostname off a stage: route, alias and DNS record. The default hostname stays.",
+      inputSchema: { project, host: z.string(), stage },
+    },
+    async ({ project, host, stage }) => text(await removeDomain(project, host, stage)),
   );
 
   await server.connect(new StdioServerTransport());

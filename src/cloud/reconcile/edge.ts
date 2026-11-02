@@ -6,7 +6,7 @@ import {
   UpdateDistributionCommand,
 } from "@aws-sdk/client-cloudfront";
 import { CloudError, cloudfront, log, waitFor } from "../aws.ts";
-import { WILDCARD_DOMAIN } from "../names.ts";
+import { PLATFORM_ALIASES, WILDCARD_DOMAIN } from "../names.ts";
 import { deleteUnusedCertificates, ensureCertificate } from "./acm.ts";
 import { ensureRecord } from "./cloudflare.ts";
 
@@ -55,7 +55,7 @@ export async function reconcileAliases(add: readonly string[], remove: readonly 
 
   const current = config.Aliases?.Items ?? [];
   const wanted = [
-    ...new Set([...current.filter((alias) => !remove.includes(alias)), ...add.filter(needsAlias)]),
+    ...new Set([...PLATFORM_ALIASES, ...current.filter((alias) => !remove.includes(alias)), ...add.filter(needsAlias)]),
   ].sort();
   const unchanged = wanted.length === current.length && wanted.every((alias) => current.includes(alias));
 
