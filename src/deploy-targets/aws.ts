@@ -1,5 +1,7 @@
-import { buildWeb } from "../build-targets/web.ts";
+import { join, resolve } from "node:path";
+import { AWS_OUTPUT, buildWeb } from "../build-targets/web.ts";
 import { readStageEnv } from "../cloud/env.ts";
+import { assertNoLocalEnvInBuild } from "../cloud/env-leak.ts";
 import { STAGE_BRANCHES } from "../cloud/names.ts";
 import { type AwsTargetOptions, projectName, resolveStage, Target } from "../cloud/project.ts";
 import { release } from "../cloud/release.ts";
@@ -19,8 +21,14 @@ export async function deployAws(options: AwsTargetOptions) {
 
   // The stage's variables are the build's too, so `VITE_*` values reach the frontend bundle in CI
   // exactly as they do from a laptop's `.env`.
-  Object.assign(process.env, await readStageEnv(target));
+  const stageEnv = await readStageEnv(target);
+  Object.assign(process.env, stageEnv);
 
   await buildWeb({ ...options, host: "aws", static: target.isStatic });
+  await assertNoLocalEnvInBuild(
+    join(root, AWS_OUTPUT, "static"),
+    [root, resolve(root, options.frontendDir ?? "apps/frontend")],
+    stageEnv,
+  );
   await release(target, { root });
 }
