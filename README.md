@@ -218,6 +218,11 @@ provisioning profiles can still tell you whether the app compiles.
 **`vercel`** builds here and uploads the finished output, rather than handing Vercel the repo and
 waiting for it to build the same thing again. Options: `cwd`.
 
+**`aws`** is Devkit Cloud: the same web build, served from our own AWS account instead of Vercel.
+The static files go to S3, the Nitro API to one Lambda function behind a shared CloudFront
+distribution, and the stage is live at `<project>.dk.atmagaming.com` (or `<project>-dev.…` for
+`development`). See [Devkit Cloud](#devkit-cloud).
+
 **`tauri-macos`** builds, signs and notarizes the macOS app if this machine has a Developer ID
 certificate, stages the DMG and a manifest for the web deploy to hand out, and refreshes the local
 install if there is one. Options: `frontendDir`, `stageDir`, `installIfPresent`, and the App Store
@@ -227,6 +232,60 @@ Connect key env var names.
 and hands the archive to fastlane, which signs the app, the watch app and the widget and uploads to
 TestFlight. Options: `frontendDir`, `iosDir`, `lane`, `defaultApiBaseUrl`, `apiBaseUrlEnv`, and the
 key env var names.
+
+## Devkit Cloud
+
+Our Vercel replacement: a deploy target plus a handful of AWS services, with nothing running
+between requests. One CloudFront distribution serves every project; a CloudFront Function reads
+the hostname's route record from a KeyValueStore and sends the request to the project's Lambda
+Function URL for API paths, or to that deploy's prefix in S3 for everything else. Every deploy is
+immutable — its own S3 prefix and Lambda version — so a rollback is two writes.
+
+```jsonc
+"deploy": {
+  "web": {
+    "type": "aws",
+    "options": {
+      "project": "kenoverse",              // default: the repo name
+      "apiPrefixes": ["api"],
+      "routing": "spa",                    // spa | pages | ssr
+      "memory": 512, "timeout": 120,        // MB, seconds
+      "crons": [{ "path": "/api/cron/sync", "schedule": "*/5 * * * *" }],
+      "domains": { "production": ["kenoverse.app"], "development": [] },
+      "predeploy": "bun run db:migrate"
+    }
+  }
+}
+```
+
+`devkit deploy` builds, then: reconciles the function, role, log group, URL, schedules and domains;
+uploads the static files (unchanged files are copied server-side); publishes a new function
+version; runs `predeploy` with the stage's env; invokes the new version's `/api/health`; and only
+then moves the `live` alias and the route records. A failed health check leaves the old deploy
+serving. `main` deploys `production`, `develop` deploys `development`; `--stage` picks by hand.
+
+```bash
+devkit cloud bootstrap            # once per account: buckets, edge, roles, budgets ($5 and $20)
+devkit cloud init                 # once per repo: the aws target and .github/workflows/deploy.yml
+devkit cloud env push             # the root .env into the stage (SSM Parameter Store)
+devkit cloud status               # what is live, with calls, errors and p95 for the last 24 h
+devkit cloud logs --follow        # CloudWatch logs for the stage
+devkit cloud deploys <project>    # the last ten deploys
+devkit cloud rollback <project>   # back to the previous deploy, in seconds
+devkit cloud domains add <project> <host>
+devkit cloud destroy <project> --stage development
+```
+
+Env vars live in SSM at `/dk/<project>/<stage>/<KEY>` and are copied into the function at deploy,
+and into the build's environment, so `VITE_*` values reach the frontend in CI too. In the function,
+`import { waitUntil } from "@elumixor/devkit/runtime"` keeps the invocation alive after the response
+(it delegates to Vercel's `waitUntil` when the code still runs there), and
+`import { put, list, del, head, createUploadUrl } from "@elumixor/devkit/blob"` covers what we used
+of `@vercel/blob`: public blobs are served at `https://<host>/_blob/<path>`.
+
+CI assumes the `dk-deploy` role through GitHub's OIDC provider, so no AWS keys are stored anywhere.
+`bootstrap` also writes a scoped `devkit` AWS profile for deploying from a laptop. `examples/hello`
+exercises every feature and is what `.github/workflows/deploy-hello.yml` deploys.
 
 ## Versions
 

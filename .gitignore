@@ -1,3 +1,7 @@
 node_modules
 *.log
 .DS_Store
+.devkit
+.output
+.nitro
+examples/*/apps/frontend/build

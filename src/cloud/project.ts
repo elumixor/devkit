@@ -21,7 +21,7 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   routing?: Routing;
   /** Function memory in MB (default 512 — the account caps functions at 512 until AWS raises it). */
   memory?: number;
-  /** Function timeout in seconds (default 60, the most CloudFront waits for a first byte). */
+  /** Function timeout in seconds (default 120; CloudFront waits 60 s for a first byte, a stream may go on longer). */
   timeout?: number;
   /** Scheduled calls into the API. */
   crons?: CronConfig[];
@@ -35,7 +35,7 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   stages?: Record<string, string>;
 }
 
-export const DEFAULTS = { memory: 512, timeout: 60, routing: "spa" as Routing, healthPath: "/api/health" };
+export const DEFAULTS = { memory: 512, timeout: 120, routing: "spa" as Routing, healthPath: "/api/health" };
 
 /** A project and stage with every default filled in — what the reconciler and the commands work from. */
 export class Target {

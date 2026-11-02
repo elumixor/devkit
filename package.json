@@ -1,7 +1,7 @@
 {
   "name": "@elumixor/devkit",
   "version": "0.12.3",
-  "description": "Dev orchestrator for bun monorepos — free ports, run apps side-by-side, open the browser when ready",
+  "description": "Dev orchestrator for bun monorepos \u2014 free ports, run apps side-by-side, open the browser when ready",
   "author": "elumixor",
   "license": "ISC",
   "type": "module",
@@ -12,6 +12,11 @@
   "bin": {
     "devkit": "src/bin/devkit.ts",
     "free-port": "src/bin/free-port.ts"
+  },
+  "exports": {
+    "./runtime": "./src/runtime/index.ts",
+    "./blob": "./src/blob/index.ts",
+    "./package.json": "./package.json"
   },
   "files": [
     "src"

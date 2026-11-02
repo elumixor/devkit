@@ -1,0 +1,38 @@
+name: deploy hello
+
+# The platform's own smoke test: the example project deploys to Devkit Cloud from CI with the OIDC
+# role and no stored AWS keys, the same way every project will.
+on:
+  push:
+    branches: [main]
+    paths: [examples/hello/**, src/**, .github/workflows/deploy-hello.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hello-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::453953529857:role/dk-deploy
+          aws-region: eu-central-1
+      - run: bun install --frozen-lockfile
+      # The example depends on this checkout's devkit, not the published one.
+      - run: bun link
+      - run: bun install --frozen-lockfile
+        working-directory: examples/hello
+      - run: bun run deploy
+        working-directory: examples/hello
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

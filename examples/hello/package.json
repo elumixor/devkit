@@ -1,0 +1,24 @@
+{
+  "name": "hello",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "deploy": "devkit deploy"
+  },
+  "devkit": {
+    "deploy": {
+      "web": {
+        "type": "aws",
+        "options": {
+          "project": "hello",
+          "apiPrefixes": ["api"],
+          "crons": [{ "path": "/api/cron/tick", "schedule": "*/5 * * * *" }]
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@elumixor/devkit": "link:@elumixor/devkit"
+  }
+}

@@ -19,6 +19,13 @@ async function context(): Promise<Context | undefined> {
   return token ? { repo, token } : undefined;
 }
 
+/** GitHub can only record a commit it has; a laptop deploy of unpushed work is left off the repo page. */
+async function isPushed(sha: string) {
+  if (process.env.GITHUB_ACTIONS) return true;
+  const branches = await $`git branch -r --contains ${sha}`.quiet().nothrow().text();
+  return branches.trim().length > 0;
+}
+
 async function repoFromRemote() {
   const remote = (await $`git remote get-url origin`.quiet().nothrow().text()).trim();
   const match = /github\.com[:/]([^/]+\/[^/.]+)/.exec(remote);
@@ -53,7 +60,7 @@ export async function startGithubDeployment(
 ): Promise<GithubDeployment> {
   const quiet: GithubDeployment = { succeed: async () => undefined, fail: async () => undefined };
   const ctx = await context();
-  if (!ctx) return quiet;
+  if (!ctx || !(await isPushed(sha))) return quiet;
   try {
     const created = await call<{ id: number }>(ctx, "POST", `/repos/${ctx.repo}/deployments`, {
       ref: sha,

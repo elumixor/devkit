@@ -24,9 +24,11 @@ async function handler(event) {
   var request = event.request;
   var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
 
+  // The runtime allows `await` only as a whole statement, never inside another expression.
   var route;
   try {
-    route = JSON.parse(await routes.get(host));
+    var record = await routes.get(host);
+    route = JSON.parse(record);
   } catch (e) {
     return NO_SITE;
   }

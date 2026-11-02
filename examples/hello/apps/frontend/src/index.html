@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Devkit Cloud hello</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; color: #222; }
+      pre { background: #f4f4f4; padding: 1rem; overflow: auto; }
+      button { margin: 0 .5rem .5rem 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Devkit Cloud hello</h1>
+    <p>A static page from S3, an API from Lambda, one hostname through CloudFront.</p>
+    <p>
+      <button data-get="/api/hello">GET /api/hello</button>
+      <button data-get="/api/slow">GET /api/slow</button>
+      <button data-get="/api/blobs">GET /api/blobs</button>
+      <button id="upload">POST /api/upload (1 MB)</button>
+      <button id="sse">GET /api/sse</button>
+    </p>
+    <pre id="out">Click something.</pre>
+    <script>
+      const out = document.getElementById("out");
+      const show = (value) => { out.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2); };
+      for (const button of document.querySelectorAll("[data-get]")) {
+        button.onclick = async () => show(await (await fetch(button.dataset.get)).json());
+      }
+      document.getElementById("upload").onclick = async () => {
+        const body = new Uint8Array(1024 * 1024).fill(42);
+        show(await (await fetch("/api/upload", { method: "POST", body })).json());
+      };
+      document.getElementById("sse").onclick = () => {
+        out.textContent = "";
+        const source = new EventSource("/api/sse");
+        source.onmessage = (event) => { out.textContent += `${event.data}\n`; };
+        source.onerror = () => { out.textContent += "(closed)\n"; source.close(); };
+      };
+    </script>
+  </body>
+</html>
