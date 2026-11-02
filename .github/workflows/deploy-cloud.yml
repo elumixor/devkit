@@ -1,11 +1,11 @@
 name: deploy cloud apps
 
 # The platform's own apps deploy to Devkit Cloud from CI with the OIDC role and no stored AWS keys,
-# the same way every project will: the dashboard, and the hello example that proves each feature.
+# the same way every project will: the hello example that proves each feature. The dashboard lives in elumixor/desk-devkit.
 on:
   push:
     branches: [main]
-    paths: [apps/dashboard/**, examples/hello/**, src/**, .github/workflows/deploy-cloud.yml]
+    paths: [examples/hello/**, src/**, .github/workflows/deploy-cloud.yml]
   workflow_dispatch:
 
 concurrency:
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [apps/dashboard, examples/hello]
+        app: [examples/hello]
       fail-fast: false
     steps:
       - uses: actions/checkout@v6

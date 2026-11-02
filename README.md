@@ -307,11 +307,12 @@ of `@vercel/blob`: public blobs are served at `https://<host>/_blob/<path>`.
 
 CI assumes the `dk-deploy` role through GitHub's OIDC provider, so no AWS keys are stored anywhere.
 `bootstrap` also writes a scoped `devkit` AWS profile for deploying from a laptop. `examples/hello`
-exercises every feature; it and the dashboard are what `.github/workflows/deploy-cloud.yml` deploys.
+exercises every feature and is what `.github/workflows/deploy-cloud.yml` deploys.
 
 ### Dashboard and MCP
 
-[devkit.atmagaming.com](https://devkit.atmagaming.com) (`apps/dashboard`) shows every project and
+[devkit.atmagaming.com](https://devkit.atmagaming.com) ([elumixor/desk-devkit](https://github.com/elumixor/desk-devkit),
+a SvelteKit app in the desk suite's style) shows every project and
 stage, what is live, the last day's calls, errors and p95, the deploy history and the function
 logs. It is itself a project on the platform; its function may read the deploy records, CloudWatch
 metrics and `dk-*` log groups through the `permissions` option. Sign-in is the desk suite's Clerk
