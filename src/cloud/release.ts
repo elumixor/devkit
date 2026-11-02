@@ -9,7 +9,7 @@ import { type Env, ensureSecret, readParameter, readStageEnv } from "./env.ts";
 import { startGithubDeployment } from "./github.ts";
 import { EDGE_HEADER, HOST_HEADER, stage as names, platform } from "./names.ts";
 import type { Target } from "./project.ts";
-import { reconcileAliases } from "./reconcile/edge.ts";
+import { pointDns, reconcileAliases } from "./reconcile/edge.ts";
 import { ensureFunctionRole, ensureSchedulerRole } from "./reconcile/iam.ts";
 import { putRoutes, type RouteRecord } from "./reconcile/kvs.ts";
 import {
@@ -88,7 +88,7 @@ export async function release(target: Target, options: ReleaseOptions) {
     step("reconcile");
     const [role, schedulerRole] = await Promise.all([ensureFunctionRole(target), ensureSchedulerRole()]);
     await Promise.all([ensureLogGroup(target.logGroup), ensureScheduleGroup()]);
-    if (target.domains.length) await reconcileAliases(target.domains);
+    const aliasesChanged = target.domains.length ? (await reconcileAliases(target.domains)).changed : false;
     const edgeSecret = await readParameter(platform.edgeSecretParameter);
     if (!edgeSecret) throw new CloudError("No edge secret in SSM — run `devkit cloud bootstrap`");
 
@@ -157,6 +157,7 @@ export async function release(target: Target, options: ReleaseOptions) {
       mode: target.routing,
     };
     await putRoutes(Object.fromEntries(hostnames.map((host) => [host, route])));
+    await pointDns(target.domains, aliasesChanged);
     const schedules = await reconcileSchedules(target, alias.arn, schedulerRole.arn);
     if (schedules.kept || schedules.removed) log(`  ${schedules.kept} schedules, ${schedules.removed} removed`);
 

@@ -1,7 +1,7 @@
 import { bold, dim } from "../../ansi.ts";
 import { CloudError, log } from "../aws.ts";
 import { deleteRecord } from "../reconcile/cloudflare.ts";
-import { needsDns, reconcileAliases } from "../reconcile/edge.ts";
+import { needsDns, pointDns, reconcileAliases } from "../reconcile/edge.ts";
 import { deleteRoute, getRoute, putRoutes } from "../reconcile/kvs.ts";
 import { readRegistry, updateRegistryHostname } from "../records.ts";
 import { targetByName } from "./context.ts";
@@ -23,8 +23,9 @@ export async function addDomain(project: string, host: string, stageFlag?: strin
   const { target, recorded } = await targetByName(project, stageFlag);
   const route = await getRoute(recorded.hostnames[0] as string);
   if (!route) throw new CloudError(`No route record for ${recorded.hostnames[0]} — deploy once first`);
-  await reconcileAliases([host]);
+  const { changed } = await reconcileAliases([host]);
   await putRoutes({ [host]: route });
+  await pointDns([host], changed);
   await updateRegistryHostname(target, host, true);
   return `https://${host} now serves ${project} ${target.stage} (new hostnames reach every edge within ~1 min)`;
 }

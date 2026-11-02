@@ -77,19 +77,32 @@ function zoneFor(hostname: string) {
  */
 export async function ensureRecord(name: string, type: "CNAME" | "TXT", content: string) {
   const zone = await zoneFor(name);
-  const found = await call<CloudflareRecord[]>(
-    "GET",
-    `/zones/${zone}/dns_records?type=${type}&name=${encodeURIComponent(name)}`,
-  );
-  const existing = found[0];
+  const existing = await findRecord(zone, name, type);
   const body = { type, name, content, proxied: false, ttl: 300, comment: "devkit cloud" };
   if (!existing) {
     await call("POST", `/zones/${zone}/dns_records`, body);
     return "created";
   }
-  if (existing.content.replace(/\.$/, "") === content.replace(/\.$/, "") && !existing.proxied) return "unchanged";
+  if (matches(existing, content)) return "unchanged";
   await call("PUT", `/zones/${zone}/dns_records/${existing.id}`, body);
   return "updated";
+}
+
+async function findRecord(zone: string, name: string, type: string) {
+  const found = await call<CloudflareRecord[]>(
+    "GET",
+    `/zones/${zone}/dns_records?type=${type}&name=${encodeURIComponent(name)}`,
+  );
+  return found[0];
+}
+
+const matches = (record: CloudflareRecord, content: string) =>
+  record.content.replace(/\.$/, "") === content.replace(/\.$/, "") && !record.proxied;
+
+/** Whether the record already exists with this content, unproxied. */
+export async function recordPointsAt(name: string, type: "CNAME" | "TXT", content: string) {
+  const existing = await findRecord(await zoneFor(name), name, type);
+  return existing !== undefined && matches(existing, content);
 }
 
 export async function deleteRecord(name: string, type: "CNAME" | "TXT") {

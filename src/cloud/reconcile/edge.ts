@@ -8,7 +8,7 @@ import {
 import { CloudError, cloudfront, log, waitFor } from "../aws.ts";
 import { PLATFORM_ALIASES, WILDCARD_DOMAIN } from "../names.ts";
 import { deleteUnusedCertificates, ensureCertificate } from "./acm.ts";
-import { ensureRecord } from "./cloudflare.ts";
+import { ensureRecord, recordPointsAt } from "./cloudflare.ts";
 
 /** How the one distribution is recognised among any others in the account. */
 export const DISTRIBUTION_COMMENT = "dk-edge";
@@ -52,7 +52,7 @@ export const needsDns = (hostname: string) => !isWildcard(hostname) && !covers(W
 
 /**
  * Adds hostnames as aliases, swapping in a certificate that covers them all when the current one
- * doesn't, and points each at the distribution in DNS. A hostname a wildcard alias already covers
+ * doesn't. DNS is left to `pointDns`, which callers run once the route exists. A hostname a wildcard alias already covers
  * (`*.desk.example.com`, listed in a config's `domains` like any host) takes no alias or certificate
  * name of its own, which keeps the certificate under ACM's name quota. Removing works in reverse.
  */
@@ -70,11 +70,7 @@ export async function reconcileAliases(add: readonly string[], remove: readonly 
   ].sort();
   const unchanged = wanted.length === current.length && wanted.every((alias) => current.includes(alias));
 
-  for (const hostname of add.filter(needsDns)) {
-    const outcome = await ensureRecord(hostname, "CNAME", distribution.domainName);
-    if (outcome !== "unchanged") log(`  DNS ${hostname} → ${distribution.domainName} ${outcome}`);
-  }
-  if (unchanged) return distribution;
+  if (unchanged) return { ...distribution, changed: false };
 
   const certificateArn = await ensureCertificate(wanted);
   const next: DistributionConfig = {
@@ -92,7 +88,31 @@ export async function reconcileAliases(add: readonly string[], remove: readonly 
   );
   log(`  distribution aliases → ${wanted.join(", ")}`);
   await deleteUnusedCertificates(certificateArn);
-  return { ...distribution, aliases: wanted };
+  return { ...distribution, aliases: wanted, changed: true };
+}
+
+/** How long a new route record takes to reach every edge's KeyValueStore copy. */
+const ROUTE_PROPAGATION_MS = 60_000;
+
+/**
+ * Points hostnames at the distribution in DNS — the cut-over step, so it runs last: after the
+ * certificate and alias are live on every edge (`aliasesChanged`) and the route records written.
+ * A hostname whose record already points here is left alone; for the rest it first waits out the
+ * route's propagation, so no viewer is sent to an edge that doesn't know the hostname yet.
+ */
+export async function pointDns(hostnames: readonly string[], aliasesChanged: boolean) {
+  const distribution = await requireDistribution();
+  const pending = [];
+  for (const hostname of hostnames.filter(needsDns))
+    if (!(await recordPointsAt(hostname, "CNAME", distribution.domainName))) pending.push(hostname);
+  if (!pending.length) return;
+  if (aliasesChanged) await waitDeployed(distribution.id);
+  log(`  waiting ${ROUTE_PROPAGATION_MS / 1000}s for routes to reach every edge before DNS`);
+  await Bun.sleep(ROUTE_PROPAGATION_MS);
+  for (const hostname of pending) {
+    const outcome = await ensureRecord(hostname, "CNAME", distribution.domainName);
+    log(`  DNS ${hostname} → ${distribution.domainName} ${outcome}`);
+  }
 }
 
 /** A distribution change takes minutes to reach every edge; most callers don't wait, bootstrap does. */
