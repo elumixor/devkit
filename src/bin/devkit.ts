@@ -4,8 +4,10 @@ import { parseArgs } from "node:util";
 import pkg from "../../package.json" with { type: "json" };
 import { runBuild } from "../build.ts";
 import { runClone } from "../clone.ts";
+import { CLOUD_USAGE, runCloud } from "../cloud/cli.ts";
 import { PHASES, type Phase } from "../config.ts";
 import { runDeploy } from "../deploy.ts";
+import { STAGE_ENV } from "../deploy-targets/aws.ts";
 import { runDev } from "../dev.ts";
 import { runRelease } from "../release.ts";
 import { runTarget } from "../run-target.ts";
@@ -22,6 +24,12 @@ const { values, positionals } = parseArgs({
     device: { type: "string" },
     dry: { type: "boolean", default: false },
     verbose: { type: "boolean", default: false },
+    stage: { type: "string" },
+    since: { type: "string" },
+    grep: { type: "string" },
+    follow: { type: "boolean", default: false },
+    to: { type: "string" },
+    email: { type: "string" },
     version: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
@@ -39,6 +47,7 @@ const usage = `usage: devkit dev [platforms...]           run the dev processes 
        devkit build:<platform>             build one platform
        devkit deploy [platforms...]        deploy every platform, in dependency order
        devkit deploy:<platform>            deploy one platform
+       devkit cloud <command>              Devkit Cloud: bootstrap, init, status, logs, rollback, env, domains
        devkit setup [root] [--dry]         validate secrets, install, terraform init, run steps
        devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
        devkit version                      write the source version into every file that declares one
@@ -53,9 +62,12 @@ const usage = `usage: devkit dev [platforms...]           run the dev processes 
   --plain   dev: print prefixed lines instead of the live board (automatic when not a terminal)
   --dry     print what would run without running it
   --verbose stream every line instead of drawing the live board (build, deploy)
+  --stage   which stage an aws deploy or cloud command targets (default: the current branch's)
   --real    run a simulator against the real API instead of sample data
   --device  simulator to run on, overriding the configured one
-  --version print the devkit version`;
+  --version print the devkit version
+
+${CLOUD_USAGE}`;
 
 if (values.help) {
   console.log(usage);
@@ -87,7 +99,20 @@ try {
       break;
     }
     case "deploy": {
+      // Steps run as their own processes, so the stage travels to them through the environment.
+      if (values.stage) process.env[STAGE_ENV] = values.stage;
       await runDeploy(platforms, { dry: values.dry, verbose: values.verbose });
+      break;
+    }
+    case "cloud": {
+      await runCloud(rest, {
+        stage: values.stage,
+        since: values.since,
+        grep: values.grep,
+        follow: values.follow,
+        to: values.to,
+        email: values.email,
+      });
       break;
     }
     // Internal: how a `type`d step actually runs — spawned as its own process by the graph (or by

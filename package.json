@@ -26,6 +26,22 @@
     "release:major": "npm version major -m \"Release v%s\" && git push --follow-tags"
   },
   "dependencies": {
+    "@aws-sdk/client-acm": "^3.1161.0",
+    "@aws-sdk/client-budgets": "^3.1161.0",
+    "@aws-sdk/client-cloudfront": "^3.1161.0",
+    "@aws-sdk/client-cloudfront-keyvaluestore": "^3.1161.0",
+    "@aws-sdk/client-cloudwatch": "^3.1161.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1161.0",
+    "@aws-sdk/client-cost-explorer": "^3.1161.0",
+    "@aws-sdk/client-iam": "^3.1161.0",
+    "@aws-sdk/client-lambda": "^3.1161.0",
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/client-scheduler": "^3.1161.0",
+    "@aws-sdk/client-ssm": "^3.1161.0",
+    "@aws-sdk/client-sts": "^3.1161.0",
+    "@aws-sdk/credential-providers": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
+    "@smithy/signature-v4a": "^3.6.2",
     "ink": "7.1.1",
     "react": "19.2.8",
     "wrap-ansi": "10.0.2"

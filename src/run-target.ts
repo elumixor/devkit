@@ -3,6 +3,7 @@ import { buildTauriMacos } from "./build-targets/tauri-macos.ts";
 import { buildWeb } from "./build-targets/web.ts";
 import { buildXcode } from "./build-targets/xcode.ts";
 import { loadConfig, type Phase, phaseOf } from "./config.ts";
+import { deployAws } from "./deploy-targets/aws.ts";
 import { deployFastlaneIos } from "./deploy-targets/fastlane-ios.ts";
 import { deployTauriMacos } from "./deploy-targets/tauri-macos.ts";
 import { deployVercel } from "./deploy-targets/vercel.ts";
@@ -38,6 +39,7 @@ const TARGETS: Record<Phase, Record<string, Target>> = {
   },
   deploy: {
     vercel: deployVercel,
+    aws: deployAws,
     "tauri-macos": deployTauriMacos,
     "fastlane-ios": deployFastlaneIos,
   },
