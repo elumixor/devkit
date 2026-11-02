@@ -88,7 +88,8 @@ function staticPath(uri, mode) {
   return "/index.html";
 }
 
-// The request here is the viewer's own, before the rewrite, so rules match the path the viewer asked for.
+// Rules match the path the viewer asked for. The request here may carry the rewritten static path
+// (`/<project>/<deploy>/...`), so that prefix comes off first.
 async function withHeaders(event) {
   var response = event.response;
   var request = event.request;
@@ -99,8 +100,11 @@ async function withHeaders(event) {
     if (!route.h) return response;
     var raw = await routes.get(HEADERS_PREFIX + route.p + "/" + route.d);
     var rules = JSON.parse(raw);
+    var uri = request.uri;
+    var rewritten = "/" + route.p + "/" + route.d + "/";
+    if (uri.indexOf(rewritten) === 0) uri = uri.slice(rewritten.length - 1);
     for (var i = 0; i < rules.length; i++) {
-      if (!new RegExp(rules[i][0]).test(request.uri)) continue;
+      if (!new RegExp(rules[i][0]).test(uri)) continue;
       var names = Object.keys(rules[i][1]);
       for (var j = 0; j < names.length; j++) response.headers[names[j]] = { value: rules[i][1][names[j]] };
     }
