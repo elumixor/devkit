@@ -1,6 +1,6 @@
 {
   "name": "@elumixor/devkit",
-  "version": "0.12.9",
+  "version": "0.12.10",
   "description": "Dev orchestrator for bun monorepos — free ports, run apps side-by-side, open the browser when ready",
   "author": "elumixor",
   "license": "ISC",
