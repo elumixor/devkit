@@ -1,0 +1,35 @@
+{
+  "name": "dashboard",
+  "private": true,
+  "type": "module",
+  "workspaces": ["web", "api"],
+  "scripts": {
+    "deploy": "devkit deploy"
+  },
+  "devkit": {
+    "deploy": {
+      "web": {
+        "type": "aws",
+        "options": {
+          "project": "dashboard",
+          "frontendDir": "web",
+          "backendDir": "api",
+          "apiPrefixes": ["api"],
+          "permissions": [
+            { "Action": "s3:GetObject", "Resource": "arn:aws:s3:::dk-sites-*/_dk/*" },
+            {
+              "Action": "s3:ListBucket",
+              "Resource": "arn:aws:s3:::dk-sites-*",
+              "Condition": { "StringLike": { "s3:prefix": ["_dk/*"] } }
+            },
+            { "Action": "cloudwatch:GetMetricData", "Resource": "*" },
+            { "Action": "logs:FilterLogEvents", "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/dk-*:*" }
+          ]
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@elumixor/devkit": "link:@elumixor/devkit"
+  }
+}

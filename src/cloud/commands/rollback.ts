@@ -41,5 +41,14 @@ export async function rollback(project: string, stageFlag: string | undefined, t
     writeDeploy({ ...to, status: "live" }),
     was ? writeDeploy({ ...was, status: "rolled-back" }) : Promise.resolve(),
   ]);
-  log(`Live again at https://${recorded.hostnames[0]} (${Math.round((Date.now() - started) / 1000)}s)`);
+  const seconds = Math.round((Date.now() - started) / 1000);
+  log(`Live again at https://${recorded.hostnames[0]} (${seconds}s)`);
+  return {
+    project,
+    stage: target.stage,
+    from: current.deployId,
+    to: to.id,
+    url: `https://${recorded.hostnames[0]}`,
+    seconds,
+  };
 }

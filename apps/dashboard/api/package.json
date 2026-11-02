@@ -1,0 +1,14 @@
+{
+  "name": "@dashboard/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nitro dev --port 10200",
+    "build": "nitro build"
+  },
+  "dependencies": {
+    "@elumixor/devkit": "link:@elumixor/devkit",
+    "h3": "^1.15.6",
+    "nitropack": "^2.13.4"
+  }
+}

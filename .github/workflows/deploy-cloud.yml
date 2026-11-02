@@ -1,15 +1,15 @@
-name: deploy hello
+name: deploy cloud apps
 
-# The platform's own smoke test: the example project deploys to Devkit Cloud from CI with the OIDC
-# role and no stored AWS keys, the same way every project will.
+# The platform's own apps deploy to Devkit Cloud from CI with the OIDC role and no stored AWS keys,
+# the same way every project will: the dashboard, and the hello example that proves each feature.
 on:
   push:
     branches: [main]
-    paths: [examples/hello/**, src/**, .github/workflows/deploy-hello.yml]
+    paths: [apps/dashboard/**, examples/hello/**, src/**, .github/workflows/deploy-cloud.yml]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-hello-${{ github.ref_name }}
+  group: deploy-cloud-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -20,6 +20,10 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [apps/dashboard, examples/hello]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -28,11 +32,11 @@ jobs:
           role-to-assume: arn:aws:iam::453953529857:role/dk-deploy
           aws-region: eu-central-1
       - run: bun install --frozen-lockfile
-      # The example depends on this checkout's devkit, not the published one.
+      # The apps depend on this checkout's devkit, not the published one.
       - run: bun link
       - run: bun install --frozen-lockfile
-        working-directory: examples/hello
+        working-directory: ${{ matrix.app }}
       - run: bun run deploy
-        working-directory: examples/hello
+        working-directory: ${{ matrix.app }}
         env:
           GITHUB_TOKEN: ${{ github.token }}

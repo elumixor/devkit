@@ -5,6 +5,7 @@ import pkg from "../../package.json" with { type: "json" };
 import { runBuild } from "../build.ts";
 import { runClone } from "../clone.ts";
 import { CLOUD_USAGE, runCloud } from "../cloud/cli.ts";
+import { runMcp } from "../cloud/mcp.ts";
 import { PHASES, type Phase } from "../config.ts";
 import { runDeploy } from "../deploy.ts";
 import { STAGE_ENV } from "../deploy-targets/aws.ts";
@@ -48,6 +49,7 @@ const usage = `usage: devkit dev [platforms...]           run the dev processes 
        devkit deploy [platforms...]        deploy every platform, in dependency order
        devkit deploy:<platform>            deploy one platform
        devkit cloud <command>              Devkit Cloud: bootstrap, init, status, logs, rollback, env, domains
+       devkit mcp                          Devkit Cloud as an MCP server over stdio (status, deploys, logs, rollback)
        devkit setup [root] [--dry]         validate secrets, install, terraform init, run steps
        devkit clone <owner/repo> [dir]     clone, decrypt secrets, set up
        devkit version                      write the source version into every file that declares one
@@ -102,6 +104,10 @@ try {
       // Steps run as their own processes, so the stage travels to them through the environment.
       if (values.stage) process.env[STAGE_ENV] = values.stage;
       await runDeploy(platforms, { dry: values.dry, verbose: values.verbose });
+      break;
+    }
+    case "mcp": {
+      await runMcp();
       break;
     }
     case "cloud": {

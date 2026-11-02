@@ -13,6 +13,13 @@ export interface CronConfig {
 
 export type Routing = "spa" | "pages" | "ssr";
 
+/** One IAM `Allow` statement the function's role gets besides its own logs and blob prefix. */
+export interface Permission {
+  Action: string | string[];
+  Resource: string | string[];
+  Condition?: Record<string, Record<string, string | string[]>>;
+}
+
 /** The `aws` deploy target's options, in the `devkit.deploy.<name>.options` block. */
 export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   /** Project name: resource names, bucket prefixes and the default hostname (default: repo name). */
@@ -33,6 +40,8 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host"> {
   healthPath?: string;
   /** Stage name to git branch (default production=main, development=develop). */
   stages?: Record<string, string>;
+  /** Extra IAM statements for the function — an app that reads other AWS resources, like the dashboard. */
+  permissions?: Permission[];
 }
 
 export const DEFAULTS = { memory: 512, timeout: 120, routing: "spa" as Routing, healthPath: "/api/health" };
@@ -95,6 +104,9 @@ export class Target {
   }
   get healthPath() {
     return this.options.healthPath ?? DEFAULTS.healthPath;
+  }
+  get permissions(): readonly Permission[] {
+    return this.options.permissions ?? [];
   }
   get isProduction() {
     return this.stage === PRODUCTION;

@@ -132,6 +132,7 @@ export async function ensureFunctionRole(target: Target) {
           Resource: `arn:aws:s3:::${blobs}`,
           Condition: { StringLike: { "s3:prefix": [`${prefix}*`] } },
         },
+        ...target.permissions.map((permission) => ({ Effect: "Allow", ...permission })),
       ],
     },
     `Devkit Cloud: ${target.project} ${target.stage} function`,

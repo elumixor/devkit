@@ -285,7 +285,28 @@ of `@vercel/blob`: public blobs are served at `https://<host>/_blob/<path>`.
 
 CI assumes the `dk-deploy` role through GitHub's OIDC provider, so no AWS keys are stored anywhere.
 `bootstrap` also writes a scoped `devkit` AWS profile for deploying from a laptop. `examples/hello`
-exercises every feature and is what `.github/workflows/deploy-hello.yml` deploys.
+exercises every feature; it and the dashboard are what `.github/workflows/deploy-cloud.yml` deploys.
+
+### Dashboard and MCP
+
+[dashboard.dk.atmagaming.com](https://dashboard.dk.atmagaming.com) (`apps/dashboard`) shows every
+project and stage, what is live, the last day's calls, errors and p95, the deploy history and the
+function logs. It is itself a project on the platform; its function may read the deploy records,
+CloudWatch metrics and `dk-*` log groups through the `permissions` option, and one shared token
+(`DASHBOARD_TOKEN` in the stage's env) guards its API. Read-only: deploys and rollbacks stay with
+the CLI and MCP.
+
+`devkit mcp` serves the same over the Model Context Protocol on stdio — `cloud_status`,
+`cloud_deploys`, `cloud_logs`, `cloud_rollback`, `cloud_env` (keys only) and `cloud_domains` — so
+an agent can check and undo a deploy. Register it once:
+
+```bash
+claude mcp add --scope user devkit-cloud -- devkit mcp
+```
+
+`permissions` on the `aws` target appends IAM `Allow` statements to the function's role for apps
+that read other AWS resources; everything else keeps the default role (its own logs and blob
+prefix only).
 
 ## Versions
 

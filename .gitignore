@@ -5,3 +5,4 @@ node_modules
 .output
 .nitro
 examples/*/apps/frontend/build
+apps/dashboard/web/build
