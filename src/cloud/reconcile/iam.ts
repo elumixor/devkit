@@ -266,12 +266,18 @@ export async function deployPolicy(): Promise<PolicyDocument> {
   };
 }
 
-/** elumixor's GitHub account id, which repos made since GitHub's immutable OIDC subjects name instead of a path. */
-const GITHUB_OWNER_ID = 12294750;
+/**
+ * The GitHub accounts whose repos may deploy. The id is what repos made since GitHub's immutable OIDC
+ * subjects name instead of a path.
+ */
+export const GITHUB_OWNERS = [
+  { name: "elumixor", id: 12294750 },
+  { name: "atmagaming", id: 213760613 },
+] as const;
 
 /**
- * The role GitHub Actions assumes: only `elumixor/*` repos, only on the branches that deploy. Older repos send
- * `repo:elumixor/<repo>:…`, newer ones `repo:elumixor@<owner id>/<repo>@<repo id>:…`.
+ * The role GitHub Actions assumes: only the owners' repos, only on the branches that deploy. Older repos send
+ * `repo:<owner>/<repo>:…`, newer ones `repo:<owner>@<owner id>/<repo>@<repo id>:…`.
  */
 export async function ensureDeployRole(branches: readonly string[]) {
   const account = await accountId();
@@ -288,10 +294,12 @@ export async function ensureDeployRole(branches: readonly string[]) {
           Condition: {
             StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
             StringLike: {
-              "token.actions.githubusercontent.com:sub": branches.flatMap((branch) => [
-                `repo:elumixor/*:ref:refs/heads/${branch}`,
-                `repo:elumixor@${GITHUB_OWNER_ID}/*:ref:refs/heads/${branch}`,
-              ]),
+              "token.actions.githubusercontent.com:sub": branches.flatMap((branch) =>
+                GITHUB_OWNERS.flatMap((owner) => [
+                  `repo:${owner.name}/*:ref:refs/heads/${branch}`,
+                  `repo:${owner.name}@${owner.id}/*:ref:refs/heads/${branch}`,
+                ]),
+              ),
             },
           },
         },

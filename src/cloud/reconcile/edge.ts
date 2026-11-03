@@ -1,3 +1,4 @@
+import { resolve4, resolveCname } from "node:dns/promises";
 import {
   type DistributionConfig,
   GetDistributionCommand,
@@ -8,7 +9,7 @@ import {
 import { CloudError, cloudfront, log, waitFor } from "../aws.ts";
 import { PLATFORM_ALIASES, WILDCARD_DOMAIN } from "../names.ts";
 import { deleteUnusedCertificates, ensureCertificate } from "./acm.ts";
-import { ensureRecord, recordPointsAt } from "./cloudflare.ts";
+import { ExternalDnsError, ensureRecord, recordPointsAt } from "./cloudflare.ts";
 
 /** How the one distribution is recognised among any others in the account. */
 export const DISTRIBUTION_COMMENT = "dk-edge";
@@ -104,7 +105,13 @@ export async function pointDns(hostnames: readonly string[], aliasesChanged: boo
   const distribution = await requireDistribution();
   const pending = [];
   for (const hostname of hostnames.filter(needsDns))
-    if (!(await recordPointsAt(hostname, "CNAME", distribution.domainName))) pending.push(hostname);
+    try {
+      if (!(await recordPointsAt(hostname, "CNAME", distribution.domainName))) pending.push(hostname);
+    } catch (error) {
+      if (!(error instanceof ExternalDnsError)) throw error;
+      if (await resolvesTo(hostname, distribution.domainName)) continue;
+      log(`  point ${hostname} at ${distribution.domainName} at its DNS provider (CNAME, or ALIAS for an apex)`);
+    }
   if (!pending.length) return;
   if (aliasesChanged) await waitDeployed(distribution.id);
   log(`  waiting ${ROUTE_PROPAGATION_MS / 1000}s for routes to reach every edge before DNS`);
@@ -113,6 +120,14 @@ export async function pointDns(hostnames: readonly string[], aliasesChanged: boo
     const outcome = await ensureRecord(hostname, "CNAME", distribution.domainName);
     log(`  DNS ${hostname} → ${distribution.domainName} ${outcome}`);
   }
+}
+
+/** Whether public DNS already sends the hostname to the distribution: by CNAME, or by an apex ALIAS's addresses. */
+async function resolvesTo(hostname: string, target: string) {
+  const cnames = await resolveCname(hostname).catch((): string[] => []);
+  if (cnames.some((name) => name.replace(/\.$/, "") === target)) return true;
+  const [mine, theirs] = await Promise.all([resolve4(hostname).catch((): string[] => []), resolve4(target).catch((): string[] => [])]);
+  return mine.some((address) => theirs.includes(address));
 }
 
 /** A distribution change takes minutes to reach every edge; most callers don't wait, bootstrap does. */

@@ -23,6 +23,8 @@ const nitro = await nitroModule.createNitro({
   dev: false,
   preset: "aws-lambda",
   awsLambda: { streaming: true },
+  // devkit ships TypeScript (`@elumixor/devkit/blob`, `/runtime`), and Nitro's esbuild skips node_modules.
+  esbuild: { options: { exclude: /node_modules\/(?!\.bun\/@elumixor\+devkit|@elumixor\/devkit)/ } },
 });
 await nitroModule.prepare(nitro);
 await nitroModule.copyPublicAssets(nitro);

@@ -52,6 +52,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return envelope.result;
 }
 
+/** The hostname's DNS is hosted elsewhere: its records have to be added at that provider by hand. */
+export class ExternalDnsError extends CloudError {}
+
 const zones = new Map<string, Promise<string>>();
 
 /** The zone a hostname belongs to: the longest zone name the token can see that ends the hostname. */
@@ -64,7 +67,7 @@ function zoneFor(hostname: string) {
     const zone = all
       .filter((candidate) => apex === candidate.name || apex.endsWith(`.${candidate.name}`))
       .sort((a, b) => b.name.length - a.name.length)[0];
-    if (!zone) throw new CloudError(`No Cloudflare zone covers ${hostname} — add the zone or widen the token`);
+    if (!zone) throw new ExternalDnsError(`No Cloudflare zone covers ${hostname} — add the zone or widen the token`);
     return zone.id;
   })();
   zones.set(apex, lookup);
@@ -121,8 +124,13 @@ export async function recordPointsAt(name: string, type: "CNAME" | "TXT", conten
   return existing !== undefined && matches(existing, content);
 }
 
+/** Deletes the record; one at a DNS provider other than Cloudflare is left for its owner to remove. */
 export async function deleteRecord(name: string, type: "CNAME" | "TXT") {
-  const zone = await zoneFor(name);
+  const zone = await zoneFor(name).catch((error: unknown) => {
+    if (error instanceof ExternalDnsError) return undefined;
+    throw error;
+  });
+  if (!zone) return 0;
   const found = await call<CloudflareRecord[]>(
     "GET",
     `/zones/${zone}/dns_records?type=${type}&name=${encodeURIComponent(name)}`,

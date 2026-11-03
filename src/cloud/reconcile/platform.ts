@@ -17,6 +17,7 @@ import {
 import {
   CreateBucketCommand,
   HeadBucketCommand,
+  PutBucketCorsCommand,
   PutBucketLifecycleConfigurationCommand,
   PutBucketPolicyCommand,
   PutPublicAccessBlockCommand,
@@ -25,8 +26,11 @@ import { CloudError, cloudfront, log, orUndefined, platformTags, s3, waitFor } f
 import { ORIGINS, PLATFORM_ALIASES, PROJECT_HEADER, platform, REGION } from "../names.ts";
 import { DISTRIBUTION_COMMENT, type Distribution } from "./edge.ts";
 
-/** A private bucket in the home region; nothing in it is reachable except through CloudFront or the SDK. */
-export async function ensureBucket(name: string) {
+/**
+ * A private bucket in the home region; nothing in it is reachable except through CloudFront or the SDK.
+ * `browserUploads` lets pages PUT to presigned URLs (`createUploadUrl`) from any origin.
+ */
+export async function ensureBucket(name: string, { browserUploads = false } = {}) {
   const exists = await orUndefined(s3().send(new HeadBucketCommand({ Bucket: name })), "NotFound", "NoSuchBucket");
   if (!exists) {
     await s3().send(
@@ -60,6 +64,23 @@ export async function ensureBucket(name: string) {
       },
     }),
   );
+  if (browserUploads)
+    await s3().send(
+      new PutBucketCorsCommand({
+        Bucket: name,
+        CORSConfiguration: {
+          CORSRules: [
+            {
+              AllowedHeaders: ["*"],
+              AllowedMethods: ["PUT", "GET", "HEAD"],
+              AllowedOrigins: ["*"],
+              ExposeHeaders: ["ETag"],
+              MaxAgeSeconds: 3600,
+            },
+          ],
+        },
+      }),
+    );
   return { created: !exists };
 }
 

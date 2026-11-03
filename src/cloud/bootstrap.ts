@@ -6,7 +6,7 @@ import { ensureCertificate } from "./reconcile/acm.ts";
 import { ensureRecord } from "./reconcile/cloudflare.ts";
 import { findDistribution, reconcileAliases, waitDeployed } from "./reconcile/edge.ts";
 import { ensureAnomalyAlerts, ensureBudgets } from "./reconcile/guardrails.ts";
-import { ensureDeployRole, ensureLocalDeployProfile, ensureSchedulerRole } from "./reconcile/iam.ts";
+import { ensureDeployRole, ensureLocalDeployProfile, ensureSchedulerRole, GITHUB_OWNERS } from "./reconcile/iam.ts";
 import { putEdgeSecret } from "./reconcile/kvs.ts";
 import {
   allowDistribution,
@@ -43,7 +43,7 @@ export async function bootstrap(options: BootstrapOptions = {}) {
 
   log("\nbuckets");
   const { sites, blobs } = await buckets();
-  await Promise.all([ensureBucket(sites), ensureBucket(blobs)]);
+  await Promise.all([ensureBucket(sites), ensureBucket(blobs, { browserUploads: true })]);
 
   log("\nedge");
   const [oacId, cachePolicyId, kvsArn] = await Promise.all([
@@ -82,7 +82,7 @@ export async function bootstrap(options: BootstrapOptions = {}) {
   const local = await ensureLocalDeployProfile();
   log(`  role ${platform.schedulerRole} ${scheduler.created ? "created" : "ok"}`);
   log(
-    `  role ${platform.deployRole} ${deploy.created ? "created" : "ok"} (GitHub OIDC, elumixor/* on ${Object.values(STAGE_BRANCHES).join(", ")})`,
+    `  role ${platform.deployRole} ${deploy.created ? "created" : "ok"} (GitHub OIDC, ${GITHUB_OWNERS.map((owner) => `${owner.name}/*`).join(", ")} on ${Object.values(STAGE_BRANCHES).join(", ")})`,
   );
   log(`  profile ${platform.localProfile} ${local.profile} (user ${platform.localDeployUser})`);
 

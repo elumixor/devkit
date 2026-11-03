@@ -7,7 +7,7 @@ import {
   RequestCertificateCommand,
 } from "@aws-sdk/client-acm";
 import { acm, CloudError, log, platformTags, waitFor } from "../aws.ts";
-import { ensureRecord } from "./cloudflare.ts";
+import { ExternalDnsError, ensureRecord } from "./cloudflare.ts";
 
 /**
  * One certificate carries every hostname the distribution answers for (Plan A). A certificate
@@ -48,8 +48,15 @@ export async function ensureCertificate(names: readonly string[]): Promise<strin
         const record = option.ResourceRecord;
         if (!record?.Name || !record.Value || written.has(record.Name)) continue;
         written.add(record.Name);
-        const outcome = await ensureRecord(record.Name.replace(/\.$/, ""), "CNAME", record.Value.replace(/\.$/, ""));
-        log(`  validation record ${record.Name} ${outcome}`);
+        const name = record.Name.replace(/\.$/, "");
+        const value = record.Value.replace(/\.$/, "");
+        try {
+          log(`  validation record ${name} ${await ensureRecord(name, "CNAME", value)}`);
+        } catch (error) {
+          if (!(error instanceof ExternalDnsError)) throw error;
+          // DNS hosted elsewhere: whoever runs the deploy adds the record there while this waits.
+          log(`  add at ${option.DomainName}'s DNS provider: ${name} CNAME ${value}`);
+        }
       }
       return undefined;
     },
