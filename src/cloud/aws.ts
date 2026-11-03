@@ -25,19 +25,30 @@ function lazy<T>(make: () => T) {
   return () => (instance ??= make());
 }
 
-export const lambda = lazy(() => new LambdaClient({ region: REGION }));
-export const s3 = lazy(() => new S3Client({ region: REGION }));
-export const ssm = lazy(() => new SSMClient({ region: REGION }));
-export const iam = lazy(() => new IAMClient({ region: REGION }));
-export const logs = lazy(() => new CloudWatchLogsClient({ region: REGION }));
-export const cloudwatch = lazy(() => new CloudWatchClient({ region: REGION }));
-export const scheduler = lazy(() => new SchedulerClient({ region: REGION }));
-export const sts = lazy(() => new STSClient({ region: REGION }));
-export const cloudfront = lazy(() => new CloudFrontClient({ region: GLOBAL_REGION }));
-export const kvs = lazy(() => new CloudFrontKeyValueStoreClient({ region: GLOBAL_REGION }));
-export const acm = lazy(() => new ACMClient({ region: GLOBAL_REGION }));
-export const budgets = lazy(() => new BudgetsClient({ region: GLOBAL_REGION }));
-export const costExplorer = lazy(() => new CostExplorerClient({ region: GLOBAL_REGION }));
+/**
+ * A socket that goes quiet for this long is dropped and the call retried: without it a stalled S3
+ * request hangs a deploy forever.
+ */
+const home = {
+  region: REGION,
+  maxAttempts: 5,
+  requestHandler: { connectionTimeout: 10_000, requestTimeout: 120_000 },
+};
+const edge = { ...home, region: GLOBAL_REGION };
+
+export const lambda = lazy(() => new LambdaClient(home));
+export const s3 = lazy(() => new S3Client(home));
+export const ssm = lazy(() => new SSMClient(home));
+export const iam = lazy(() => new IAMClient(home));
+export const logs = lazy(() => new CloudWatchLogsClient(home));
+export const cloudwatch = lazy(() => new CloudWatchClient(home));
+export const scheduler = lazy(() => new SchedulerClient(home));
+export const sts = lazy(() => new STSClient(home));
+export const cloudfront = lazy(() => new CloudFrontClient(edge));
+export const kvs = lazy(() => new CloudFrontKeyValueStoreClient(edge));
+export const acm = lazy(() => new ACMClient(edge));
+export const budgets = lazy(() => new BudgetsClient(edge));
+export const costExplorer = lazy(() => new CostExplorerClient(edge));
 
 let account: Promise<string> | undefined;
 
