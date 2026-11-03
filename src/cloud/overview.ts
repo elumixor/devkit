@@ -34,8 +34,11 @@ export interface ProjectOverview {
   stages: StageOverview[];
 }
 
-/** What `status`, the MCP server and the dashboard all show: every stage, what is live on it, how it did today. */
-export async function overview(project?: string): Promise<ProjectOverview[]> {
+/**
+ * What `status`, the MCP server and the dashboard all show: every stage, what is live on it, how it did today.
+ * CloudWatch bills every metric read, so a caller with its own numbers passes `metrics: false`.
+ */
+export async function overview(project?: string, { metrics: withMetrics = true } = {}): Promise<ProjectOverview[]> {
   const registries = project
     ? [await readRegistry(project)].filter((registry) => registry !== undefined)
     : await listProjects();
@@ -47,7 +50,7 @@ export async function overview(project?: string): Promise<ProjectOverview[]> {
           const target = new Target(registry.project, stage);
           const [current, metrics, deploys] = await Promise.all([
             readCurrent(target),
-            metricsFor(target.functionName),
+            withMetrics ? metricsFor(target.functionName) : NO_METRICS,
             listDeploys(target, 3),
           ]);
           return {
@@ -65,7 +68,22 @@ export async function overview(project?: string): Promise<ProjectOverview[]> {
   );
 }
 
-async function metricsFor(functionName: string): Promise<Metrics> {
+const NO_METRICS: Metrics = { calls: 0, errors: 0, p95ms: 0 };
+
+/** Each read costs money and the numbers move slowly: one function's are reused this long. */
+const METRICS_MAX_AGE_MS = 10 * 60_000;
+const recent = new Map<string, { at: number; metrics: Promise<Metrics> }>();
+
+function metricsFor(functionName: string): Promise<Metrics> {
+  const kept = recent.get(functionName);
+  if (kept && Date.now() - kept.at < METRICS_MAX_AGE_MS) return kept.metrics;
+  const metrics = readMetrics(functionName);
+  recent.set(functionName, { at: Date.now(), metrics });
+  metrics.catch(() => recent.delete(functionName));
+  return metrics;
+}
+
+async function readMetrics(functionName: string): Promise<Metrics> {
   const end = new Date();
   const start = new Date(end.getTime() - DAY_SECONDS * 1000);
   const query = (id: string, metric: string, stat: string) => ({
