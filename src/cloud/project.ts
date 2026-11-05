@@ -27,7 +27,7 @@ export interface AwsTargetOptions extends Omit<WebBuildOptions, "host" | "static
   project?: string;
   /** How the edge serves paths that aren't the API (default `spa`). */
   routing?: Routing;
-  /** Function memory in MB (default 512 — the account caps functions at 512 until AWS raises it). */
+  /** Function memory in MB (default 512). */
   memory?: number;
   /** Function timeout in seconds (default 120; CloudFront waits 60 s for a first byte, a stream may go on longer). */
   timeout?: number;
