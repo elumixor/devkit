@@ -50,7 +50,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@smithy/signature-v4a": "^3.6.2",
     "ink": "7.1.1",
-    "react": "19.2.8",
+    "react": "^19.2.8",
     "wrap-ansi": "10.0.2",
     "zod": "^4.6.7"
   },
