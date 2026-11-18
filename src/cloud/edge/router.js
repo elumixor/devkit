@@ -88,10 +88,26 @@ function staticPath(uri, mode) {
   return "/index.html";
 }
 
+// A Lambda Function URL renames some response headers it reserves (WWW-Authenticate among them) to
+// `x-amzn-remapped-<name>`. OAuth clients need the real `WWW-Authenticate` on a 401, so the original
+// names come back here.
+var REMAPPED_PREFIX = "x-amzn-remapped-";
+var RESTORED = ["www-authenticate"];
+
+function restoreRemapped(headers) {
+  for (var i = 0; i < RESTORED.length; i++) {
+    var remapped = REMAPPED_PREFIX + RESTORED[i];
+    if (!headers[remapped]) continue;
+    headers[RESTORED[i]] = headers[remapped];
+    delete headers[remapped];
+  }
+}
+
 // Rules match the path the viewer asked for. The request here may carry the rewritten static path
 // (`/<project>/<deploy>/...`), so that prefix comes off first.
 async function withHeaders(event) {
   var response = event.response;
+  restoreRemapped(response.headers);
   var request = event.request;
   var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
   try {
