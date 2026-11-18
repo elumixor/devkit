@@ -329,7 +329,47 @@ of `@vercel/blob`: public blobs are served at `https://<host>/_blob/<path>`.
 
 CI assumes the `dk-deploy` role through GitHub's OIDC provider, so no AWS keys are stored anywhere.
 `bootstrap` also writes a scoped `devkit` AWS profile for deploying from a laptop. `examples/hello`
-exercises every feature and is what `.github/workflows/deploy-cloud.yml` deploys.
+exercises every feature and is what `.github/workflows/deploy-cloud.yml` deploys. `devkit deploy`
+uses the standard AWS credential chain (`AWS_PROFILE`, or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`
++ `AWS_SESSION_TOKEN`), and a stage's own `AWS_*` keys never replace those during a deploy.
+
+#### Deploying from a machine without GitHub Actions
+
+A server that cannot use GitHub's OIDC gets its own deploy key. Run this on a trusted machine with
+admin credentials and pipe the output straight to the server; nothing is written to disk locally:
+
+```bash
+devkit cloud deploy-key box --source-ip 203.0.113.7 | ssh box 'cat > ~/.config/dk-deploy.env && chmod 600 ~/.config/dk-deploy.env'
+```
+
+It makes the IAM user `dk-deploy-box`, whose only permission is `sts:AssumeRole` on the role
+`dk-deploy-box` from that address with `DurationSeconds` of 900 or less. The role carries the
+`dk-deploy` policy plus a guard that denies every call from any other address and any IAM action on
+`dk-deploy*` identities. The trust names only that user, also IP-locked. The `dk-deploy` OIDC role
+is not touched. stdout gets `DK_DEPLOY_ACCESS_KEY_ID`, `DK_DEPLOY_SECRET_ACCESS_KEY`,
+`DK_DEPLOY_ROLE_ARN` and `AWS_REGION`. These names are deliberately not `AWS_*`: the key alone
+cannot deploy.
+
+On the server, the holder of those values trades them for 15-minute credentials and gives a deploy
+only those:
+
+```bash
+set -a; . ~/.config/dk-deploy.env; set +a
+eval "$(devkit cloud session | sed 's/^/export /')"   # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+devkit deploy
+```
+
+An EventBridge rule `dk-deploy-box-ip` in eu-central-1 and us-east-1 (IAM and CloudFront events
+land there) matches any API call by the user or its role sessions from another address. It sends
+the match to the SNS topic `dk-deploy-alerts`, which emails `--email` (default `git config
+user.email`). Confirm the subscription email from each region once. The rule uses
+`ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`, so read-only calls count too. Management events
+need no trail. S3 object reads and writes are data events: they are only seen with a trail that logs
+data events. Off-IP calls are denied either way.
+
+Rotate the key every 90 days: `devkit cloud deploy-key box --source-ip <ip> --rotate | ssh box ...`
+creates the new key, then deletes the old one. The same command with a new `--source-ip` moves the
+lock to a new address. `--revoke` deletes the key, user, role and alert rules.
 
 ### Dashboard and MCP
 

@@ -31,6 +31,9 @@ const { values, positionals } = parseArgs({
     follow: { type: "boolean", default: false },
     to: { type: "string" },
     email: { type: "string" },
+    "source-ip": { type: "string" },
+    rotate: { type: "boolean", default: false },
+    revoke: { type: "boolean", default: false },
     yes: { type: "boolean", short: "y", default: false },
     version: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
@@ -120,6 +123,9 @@ try {
         to: values.to,
         email: values.email,
         yes: values.yes,
+        sourceIp: values["source-ip"],
+        rotate: values.rotate,
+        revoke: values.revoke,
       });
       break;
     }

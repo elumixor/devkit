@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { AWS_OUTPUT, buildWeb } from "../build-targets/web.ts";
+import { withoutDeployCredentials } from "../cloud/deploy-key-policies.ts";
 import { readStageEnv } from "../cloud/env.ts";
 import { assertNoLocalEnvInBuild } from "../cloud/env-leak.ts";
 import { STAGE_BRANCHES } from "../cloud/names.ts";
@@ -20,9 +21,10 @@ export async function deployAws(options: AwsTargetOptions) {
   const target = new Target(project, stage, options);
 
   // The stage's variables are the build's too, so `VITE_*` values reach the frontend bundle in CI
-  // exactly as they do from a laptop's `.env`.
+  // exactly as they do from a laptop's `.env`. The deploy's own AWS credentials (a profile, GitHub's OIDC
+  // role, or session keys in AWS_* env) stay: an app's AWS_* keys must not swap them mid-deploy.
   const stageEnv = await readStageEnv(target);
-  Object.assign(process.env, stageEnv);
+  Object.assign(process.env, withoutDeployCredentials(stageEnv));
 
   await buildWeb({ ...options, host: "aws", static: target.isStatic });
   await assertNoLocalEnvInBuild(

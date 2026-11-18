@@ -1,4 +1,5 @@
 import { bootstrap } from "./bootstrap.ts";
+import { deployKey, session } from "./commands/deploy-key.ts";
 import { destroy } from "./commands/destroy.ts";
 import { domains } from "./commands/domains.ts";
 import { env } from "./commands/env.ts";
@@ -16,6 +17,9 @@ export interface CloudFlags {
   to?: string;
   email?: string;
   yes?: boolean;
+  sourceIp?: string;
+  rotate?: boolean;
+  revoke?: boolean;
 }
 
 export const CLOUD_USAGE = `usage: devkit cloud bootstrap [--email x]      once per account: buckets, edge, roles, budgets
@@ -27,7 +31,10 @@ export const CLOUD_USAGE = `usage: devkit cloud bootstrap [--email x]      once 
        devkit cloud env ls|pull|push|set|rm [--stage s]
        devkit cloud infra plan|apply|sync [--yes]   Terraform resources, outputs into stage env
        devkit cloud domains ls|add|rm <project> [host] [--stage s]
-       devkit cloud destroy <project> --stage s`;
+       devkit cloud destroy <project> --stage s
+       devkit cloud deploy-key <name> --source-ip <ip> [--rotate|--revoke] [--email x]
+                                              admin, once per machine: IP-locked key on stdout
+       devkit cloud session                   on that machine: key env -> 15-min AWS_* creds`;
 
 /** `devkit cloud <command> ...` */
 export function runCloud(args: readonly string[], flags: CloudFlags) {
@@ -53,6 +60,15 @@ export function runCloud(args: readonly string[], flags: CloudFlags) {
       return infra(rest[0], { yes: flags.yes });
     case "domains":
       return domains(rest[0], rest[1], rest[2], flags.stage);
+    case "deploy-key":
+      return deployKey(rest[0], {
+        sourceIp: flags.sourceIp,
+        rotate: flags.rotate,
+        revoke: flags.revoke,
+        email: flags.email,
+      });
+    case "session":
+      return session();
     case "destroy":
       return destroy(rest[0], flags.stage);
     default:
