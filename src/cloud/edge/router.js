@@ -12,6 +12,7 @@ var EDGE_SECRET_KEY = "_edge";
 var EDGE_HEADER = "x-dk-edge";
 var HOST_HEADER = "x-dk-host";
 var PROJECT_HEADER = "x-dk-project";
+var STATUS_HEADER = "x-dk-status";
 var BLOB_PREFIX = "/_blob/";
 var SSR_ASSETS_PREFIX = "/_app/";
 var HEADERS_PREFIX = "_h/";
@@ -94,6 +95,21 @@ function staticPath(uri, mode) {
 var REMAPPED_PREFIX = "x-amzn-remapped-";
 var RESTORED = ["www-authenticate"];
 
+// CloudFront runs this function only on origin statuses below 400, so the function sends an error
+// that carries WWW-Authenticate as 200 with the real status in STATUS_HEADER.
+function restoreStatus(response) {
+  var header = response.headers[STATUS_HEADER];
+  if (!header) return;
+  delete response.headers[STATUS_HEADER];
+  var status = parseInt(header.value, 10);
+  if (status >= 400 && status < 600) {
+    response.statusCode = status;
+    response.statusDescription = STATUS_TEXT[status] || "Error";
+  }
+}
+
+var STATUS_TEXT = { 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 500: "Internal Server Error" };
+
 function restoreRemapped(headers) {
   for (var i = 0; i < RESTORED.length; i++) {
     var remapped = REMAPPED_PREFIX + RESTORED[i];
@@ -108,6 +124,7 @@ function restoreRemapped(headers) {
 async function withHeaders(event) {
   var response = event.response;
   restoreRemapped(response.headers);
+  restoreStatus(response);
   var request = event.request;
   var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
   try {

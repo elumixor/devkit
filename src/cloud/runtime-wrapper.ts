@@ -1,4 +1,4 @@
-import { EDGE_HEADER, HOST_HEADER } from "./names.ts";
+import { EDGE_HEADER, HOST_HEADER, STATUS_HEADER } from "./names.ts";
 
 /** Where `@elumixor/devkit/runtime` finds the wrapper's `waitUntil` at run time. */
 export const WAIT_UNTIL_SYMBOL = "dk.waitUntil";
@@ -18,6 +18,7 @@ const EDGE_SECRET = process.env.DK_EDGE_SECRET;
 const CRON_SECRET = process.env.CRON_SECRET;
 const EDGE_HEADER = ${JSON.stringify(EDGE_HEADER)};
 const HOST_HEADER = ${JSON.stringify(HOST_HEADER)};
+const STATUS_HEADER = ${JSON.stringify(STATUS_HEADER)};
 const pendingWork = new AsyncLocalStorage();
 
 globalThis[Symbol.for(${JSON.stringify(WAIT_UNTIL_SYMBOL)})] = (promise) => {
@@ -25,6 +26,19 @@ globalThis[Symbol.for(${JSON.stringify(WAIT_UNTIL_SYMBOL)})] = (promise) => {
   if (pending) pending.push(Promise.resolve(promise));
   else console.warn("waitUntil called outside a request; the promise is not awaited");
 };
+
+// The Function URL renames WWW-Authenticate, and CloudFront skips the router's viewer-response step
+// (which renames it back) on any origin status of 400 or higher. So an error carrying the header
+// goes out as 200 with its real status in STATUS_HEADER, and the router restores both.
+const streamFrom = awslambda.HttpResponseStream.from;
+awslambda.HttpResponseStream.from = (stream, prelude) => streamFrom.call(awslambda.HttpResponseStream, stream, errorAsOk(prelude));
+
+function errorAsOk(prelude) {
+  const status = prelude?.statusCode ?? 200;
+  const headers = prelude?.headers;
+  if (status < 400 || !headers || !Object.keys(headers).some((name) => name.toLowerCase() === "www-authenticate")) return prelude;
+  return { ...prelude, statusCode: 200, headers: { ...headers, [STATUS_HEADER]: String(status) } };
+}
 
 export const handler = awslambda.streamifyResponse(async (rawEvent, responseStream, context) => {
   const event = rawEvent.dk === "cron" ? cronRequest(rawEvent) : rawEvent;

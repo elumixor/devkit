@@ -39,3 +39,14 @@ test("restores the header even when the host has no route", async () => {
   const response = await handler(viewerResponse({ "x-amzn-remapped-www-authenticate": { value: "Bearer" } }));
   expect(response.headers["www-authenticate"]).toEqual({ value: "Bearer" });
 });
+
+test("puts back the error status the function sent as 200", async () => {
+  delete store["api.example.com"];
+  const event = viewerResponse({ "x-amzn-remapped-www-authenticate": { value: "Bearer" }, "x-dk-status": { value: "401" } });
+  event.response.statusCode = 200;
+  const response = await handler(event);
+  expect(response.statusCode).toBe(401);
+  expect(response.statusDescription).toBe("Unauthorized");
+  expect(response.headers["x-dk-status"]).toBeUndefined();
+  expect(response.headers["www-authenticate"]).toEqual({ value: "Bearer" });
+});

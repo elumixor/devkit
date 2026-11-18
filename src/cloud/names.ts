@@ -59,6 +59,11 @@ export const headersKey = (project: string, deployPath: string) => `_h/${project
 export const HOST_HEADER = "x-dk-host";
 /** Set by the router per request so two projects' identical API paths never share a cache entry. */
 export const PROJECT_HEADER = "x-dk-project";
+/**
+ * The real status of an error response the function sent as 200, because CloudFront runs no
+ * viewer-response function on an origin status of 400 or higher. The router puts it back.
+ */
+export const STATUS_HEADER = "x-dk-status";
 
 /** Resources that exist once per project and stage. */
 export const stage = {
