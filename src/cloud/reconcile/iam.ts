@@ -16,7 +16,6 @@ import {
   ListPolicyVersionsCommand,
   ListRolePoliciesCommand,
   PutRolePolicyCommand,
-  UpdateAssumeRolePolicyCommand,
 } from "@aws-sdk/client-iam";
 import { $ } from "bun";
 import { accountId, iam, orUndefined, platformTags, retryWhile } from "../aws.ts";
@@ -235,7 +234,8 @@ export async function ensureBoundaryPolicy() {
  * The deploy role: what GitHub Actions assumes through OIDC, and what the local `devkit` profile
  * is limited to. Everything it may touch is named `dk-*` or lives in the platform's buckets. It may
  * create and change only roles under the boundary, and never the boundary, trusts, managed policies
- * or the deploy roles themselves. Key order follows the signed plan, so the JSON compares byte for byte.
+ * or the deploy roles themselves. Every statement's key order follows the signed plan, so the compact JSON
+ * for the platform account equals the plan's document byte for byte.
  */
 export function deployPolicy(account: string) {
   const sites = platform.sitesBucket(account);
@@ -426,27 +426,18 @@ export function deployTrust(account: string): PolicyDocument {
 }
 
 /**
- * The role GitHub Actions assumes. Admin only (`devkit cloud bootstrap`): it sets the trust to
- * `deployTrust` and attaches the deploy policy, both of which the deploy role itself is denied.
+ * The role GitHub Actions assumes. Admin only (`devkit cloud bootstrap`): a new role gets `deployTrust`
+ * (an existing role's trust is left alone), and the deploy policy is attached, which the deploy role itself is denied.
  */
 export async function ensureDeployRole() {
   const account = await accountId();
   const policyArn = await ensureManagedPolicy(platform.deployPolicy, deployPolicy(account));
-  const trust = deployTrust(account);
   const role = await ensureRole(
     platform.deployRole,
-    trust,
+    deployTrust(account),
     undefined,
     "Devkit Cloud: what GitHub Actions deploys with",
   );
-  if (!role.created) {
-    const current = await iam().send(new GetRoleCommand({ RoleName: platform.deployRole }));
-    const currentTrust = decodeURIComponent(current.Role?.AssumeRolePolicyDocument ?? "");
-    if (!currentTrust || JSON.stringify(JSON.parse(currentTrust)) !== JSON.stringify(trust))
-      await iam().send(
-        new UpdateAssumeRolePolicyCommand({ RoleName: platform.deployRole, PolicyDocument: JSON.stringify(trust) }),
-      );
-  }
   await retryWhile(
     () => iam().send(new AttachRolePolicyCommand({ RoleName: platform.deployRole, PolicyArn: policyArn })),
     ["NoSuchEntityException"],
