@@ -128,7 +128,7 @@ async function ensureKeyRole(account: string, name: string, cidr: string) {
         ),
       ["MalformedPolicyDocumentException"],
     );
-  const policyArn = await ensureManagedPolicy(platform.deployPolicy, await deployPolicy());
+  const policyArn = await ensureManagedPolicy(platform.deployPolicy, deployPolicy(account));
   await retryWhile(
     () => iam().send(new AttachRolePolicyCommand({ RoleName: name, PolicyArn: policyArn })),
     ["NoSuchEntityException"],

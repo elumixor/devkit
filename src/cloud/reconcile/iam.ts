@@ -16,6 +16,7 @@ import {
   ListPolicyVersionsCommand,
   ListRolePoliciesCommand,
   PutRolePolicyCommand,
+  UpdateAssumeRolePolicyCommand,
 } from "@aws-sdk/client-iam";
 import { $ } from "bun";
 import { accountId, iam, orUndefined, platformTags, retryWhile } from "../aws.ts";
@@ -30,12 +31,16 @@ const assumeRole = (service: string): PolicyDocument => ({
   Statement: [{ Effect: "Allow", Principal: { Service: service }, Action: "sts:AssumeRole" }],
 });
 
-/** Creates the role if missing and makes its one inline policy match; returns the ARN. */
+/**
+ * Creates the role if missing (under `boundary`, a managed policy ARN, when given) and makes its one
+ * inline policy match; returns the ARN. Never changes an existing role's trust or boundary.
+ */
 export async function ensureRole(
   name: string,
   trust: PolicyDocument,
   policy: PolicyDocument | undefined,
   description: string,
+  boundary?: string,
 ) {
   const existing = await orUndefined(iam().send(new GetRoleCommand({ RoleName: name })), "NoSuchEntityException");
   const arn =
@@ -46,6 +51,7 @@ export async function ensureRole(
           RoleName: name,
           AssumeRolePolicyDocument: JSON.stringify(trust),
           Description: description,
+          PermissionsBoundary: boundary,
           Tags: platformTags(),
         }),
       )
@@ -136,6 +142,7 @@ export async function ensureFunctionRole(target: Target) {
       ],
     },
     `Devkit Cloud: ${target.project} ${target.stage} function`,
+    boundaryArn(account),
   );
 }
 
@@ -156,58 +163,124 @@ export async function ensureSchedulerRole() {
       ],
     },
     "Devkit Cloud: lets EventBridge Scheduler call project functions",
+    boundaryArn(account),
   );
+}
+
+/** The managed policy every function and scheduler role is created under: no role devkit makes can exceed it. */
+export const boundaryArn = (account: string) => `arn:aws:iam::${account}:policy/${platform.boundaryPolicy}`;
+
+/**
+ * The permissions boundary: the union of what function, dashboard and scheduler roles need. The deploy
+ * role may only create or change `dk-*` roles that carry it, so a deploy cannot mint a stronger role.
+ */
+export function boundaryPolicy(account: string): PolicyDocument {
+  const sites = platform.sitesBucket(account);
+  const blobs = platform.blobsBucket(account);
+  const logGroups = `arn:aws:logs:${REGION}:${account}:log-group:/aws/lambda/dk-*:*`;
+  return {
+    Version: "2012-10-17",
+    Statement: [
+      { Sid: "FnLogs", Effect: "Allow", Action: ["logs:CreateLogStream", "logs:PutLogEvents"], Resource: logGroups },
+      {
+        Sid: "FnBlobs",
+        Effect: "Allow",
+        Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectAttributes"],
+        Resource: `arn:aws:s3:::${blobs}/*`,
+      },
+      {
+        Sid: "FnList",
+        Effect: "Allow",
+        Action: "s3:ListBucket",
+        Resource: [`arn:aws:s3:::${blobs}`, `arn:aws:s3:::${sites}`],
+      },
+      { Sid: "DashSiteMeta", Effect: "Allow", Action: "s3:GetObject", Resource: `arn:aws:s3:::${sites}/_dk/*` },
+      {
+        Sid: "SchedulerInvoke",
+        Effect: "Allow",
+        Action: ["lambda:InvokeFunction", "lambda:GetFunctionConfiguration"],
+        Resource: `arn:aws:lambda:${REGION}:${account}:function:dk-*`,
+      },
+      {
+        Sid: "DashReads",
+        Effect: "Allow",
+        Action: [
+          "cloudwatch:GetMetricData",
+          "logs:DescribeLogGroups",
+          "ce:GetCostAndUsage",
+          "ce:GetCostForecast",
+          "scheduler:ListSchedules",
+          "scheduler:GetSchedule",
+          "ssm:DescribeParameters",
+        ],
+        Resource: "*",
+      },
+      { Sid: "DashLogs", Effect: "Allow", Action: "logs:FilterLogEvents", Resource: logGroups },
+      {
+        Sid: "DashDbUrl",
+        Effect: "Allow",
+        Action: "ssm:GetParameter",
+        Resource: `arn:aws:ssm:${REGION}:${account}:parameter/dk/*/*/DATABASE_URL`,
+      },
+    ],
+  };
+}
+
+/** Reconciles the boundary policy. Admin only (`devkit cloud bootstrap`); runs before any role is made. */
+export async function ensureBoundaryPolicy() {
+  return ensureManagedPolicy(platform.boundaryPolicy, boundaryPolicy(await accountId()));
 }
 
 /**
  * The deploy role: what GitHub Actions assumes through OIDC, and what the local `devkit` profile
- * is limited to. Everything it may touch is named `dk-*` or lives in the platform's buckets.
+ * is limited to. Everything it may touch is named `dk-*` or lives in the platform's buckets. It may
+ * create and change only roles under the boundary, and never the boundary, trusts, managed policies
+ * or the deploy roles themselves. Key order follows the signed plan, so the JSON compares byte for byte.
  */
-export async function deployPolicy(): Promise<PolicyDocument> {
-  const account = await accountId();
-  const { sites, blobs } = await buckets();
+export function deployPolicy(account: string) {
+  const sites = platform.sitesBucket(account);
+  const blobs = platform.blobsBucket(account);
+  const roles = `arn:aws:iam::${account}:role/dk-*`;
   return {
-    Version: "2012-10-17",
     Statement: [
-      { Effect: "Allow", Action: "sts:GetCallerIdentity", Resource: "*" },
+      { Action: "sts:GetCallerIdentity", Effect: "Allow", Resource: "*" },
       {
-        Effect: "Allow",
         Action: ["s3:ListBucket", "s3:GetBucketLocation"],
+        Effect: "Allow",
         Resource: [`arn:aws:s3:::${sites}`, `arn:aws:s3:::${blobs}`],
       },
       {
-        Effect: "Allow",
         Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+        Effect: "Allow",
         Resource: [`arn:aws:s3:::${sites}/*`, `arn:aws:s3:::${blobs}/*`],
       },
-      { Effect: "Allow", Action: "lambda:*", Resource: `arn:aws:lambda:${REGION}:${account}:function:dk-*` },
-      { Effect: "Allow", Action: ["lambda:ListFunctions", "lambda:GetAccountSettings"], Resource: "*" },
+      { Action: "lambda:*", Effect: "Allow", Resource: `arn:aws:lambda:${REGION}:${account}:function:dk-*` },
+      { Action: ["lambda:ListFunctions", "lambda:GetAccountSettings"], Effect: "Allow", Resource: "*" },
       {
+        Sid: "RoleRead",
         Effect: "Allow",
-        Action: [
-          "iam:GetRole",
-          "iam:CreateRole",
-          "iam:PutRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:DeleteRolePolicy",
-          "iam:DeleteRole",
-          "iam:TagRole",
-        ],
-        Resource: `arn:aws:iam::${account}:role/dk-*`,
+        Action: ["iam:GetRole", "iam:ListRolePolicies", "iam:TagRole", "iam:DeleteRole"],
+        Resource: roles,
       },
       {
+        Sid: "RoleWriteBoundaryOnly",
         Effect: "Allow",
+        Action: ["iam:CreateRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy"],
+        Resource: roles,
+        Condition: { StringEquals: { "iam:PermissionsBoundary": boundaryArn(account) } },
+      },
+      {
         Action: "iam:PassRole",
-        Resource: `arn:aws:iam::${account}:role/dk-*`,
         Condition: { StringEquals: { "iam:PassedToService": ["lambda.amazonaws.com", "scheduler.amazonaws.com"] } },
+        Effect: "Allow",
+        Resource: roles,
       },
       {
-        Effect: "Allow",
         Action: ["logs:CreateLogGroup", "logs:PutRetentionPolicy", "logs:DeleteLogGroup", "logs:TagResource"],
+        Effect: "Allow",
         Resource: `arn:aws:logs:${REGION}:${account}:log-group:/aws/lambda/dk-*`,
       },
       {
-        Effect: "Allow",
         Action: [
           "logs:DescribeLogGroups",
           "logs:FilterLogEvents",
@@ -215,30 +288,30 @@ export async function deployPolicy(): Promise<PolicyDocument> {
           "logs:GetLogEvents",
           "logs:DescribeLogStreams",
         ],
+        Effect: "Allow",
         Resource: "*",
       },
-      { Effect: "Allow", Action: "cloudwatch:GetMetricData", Resource: "*" },
+      { Action: "cloudwatch:GetMetricData", Effect: "Allow", Resource: "*" },
       {
-        Effect: "Allow",
         Action: "scheduler:*",
+        Effect: "Allow",
         Resource: [
           `arn:aws:scheduler:${REGION}:${account}:schedule/${platform.scheduleGroup}/dk-*`,
           `arn:aws:scheduler:${REGION}:${account}:schedule-group/${platform.scheduleGroup}`,
         ],
       },
-      { Effect: "Allow", Action: "scheduler:ListSchedules", Resource: "*" },
+      { Action: "scheduler:ListSchedules", Effect: "Allow", Resource: "*" },
       {
-        Effect: "Allow",
         Action: ["ssm:GetParametersByPath", "ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"],
+        Effect: "Allow",
         Resource: `arn:aws:ssm:${REGION}:${account}:parameter/dk/*`,
       },
       {
-        Effect: "Allow",
         Action: ["cloudfront-keyvaluestore:*"],
+        Effect: "Allow",
         Resource: `arn:aws:cloudfront::${account}:key-value-store/*`,
       },
       {
-        Effect: "Allow",
         Action: [
           "cloudfront:DescribeKeyValueStore",
           "cloudfront:ListKeyValueStores",
@@ -248,10 +321,10 @@ export async function deployPolicy(): Promise<PolicyDocument> {
           "cloudfront:ListDistributions",
           "cloudfront:ListTagsForResource",
         ],
+        Effect: "Allow",
         Resource: "*",
       },
       {
-        Effect: "Allow",
         Action: [
           "acm:ListCertificates",
           "acm:DescribeCertificate",
@@ -260,54 +333,120 @@ export async function deployPolicy(): Promise<PolicyDocument> {
           "acm:ListTagsForCertificate",
           "acm:DeleteCertificate",
         ],
+        Effect: "Allow",
         Resource: "*",
+      },
+      {
+        Sid: "DenyBoundaryChange",
+        Effect: "Deny",
+        Action: [
+          "iam:DeleteRolePermissionsBoundary",
+          "iam:PutRolePermissionsBoundary",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:UpdateAssumeRolePolicy",
+        ],
+        Resource: "*",
+      },
+      {
+        Sid: "DenyPolicyEdit",
+        Effect: "Deny",
+        Action: [
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+        ],
+        Resource: "*",
+      },
+      {
+        Sid: "DenyDeployRoleSelf",
+        Effect: "Deny",
+        Action: ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:DeleteRole", "iam:TagRole"],
+        Resource: [
+          `arn:aws:iam::${account}:role/${platform.deployRole}`,
+          `arn:aws:iam::${account}:role/${platform.deployRole}-atmagaming`,
+        ],
+      },
+    ],
+    Version: "2012-10-17",
+  } satisfies PolicyDocument;
+}
+
+/**
+ * The repos whose `main` may deploy, by GitHub's immutable OIDC subject
+ * `repo:<owner>@<owner id>/<repo>@<repo id>:ref:refs/heads/main`: a renamed or re-created repo
+ * or account gets a new id and no access. Adding a repo = adding it here and running bootstrap.
+ */
+export const DEPLOY_REPOS = [
+  { owner: "atmagaming", ownerId: 213760613, repo: "nastu", repoId: 1305267624 },
+  { owner: "atmagaming", ownerId: 213760613, repo: "web", repoId: 1154326340 },
+  { owner: "elumixor", ownerId: 12294750, repo: "balance", repoId: 1318213485 },
+  { owner: "elumixor", ownerId: 12294750, repo: "desk-devkit", repoId: 1443319277 },
+  { owner: "elumixor", ownerId: 12294750, repo: "desk-infra", repoId: 1435813666 },
+  { owner: "elumixor", ownerId: 12294750, repo: "devkit", repoId: 1294881684 },
+  { owner: "elumixor", ownerId: 12294750, repo: "kenoverse", repoId: 1190878121 },
+  { owner: "elumixor", ownerId: 12294750, repo: "limn", repoId: 1283013390 },
+  { owner: "elumixor", ownerId: 12294750, repo: "puretype", repoId: 1201954917 },
+  { owner: "elumixor", ownerId: 12294750, repo: "telegram-air", repoId: 1362419448 },
+  { owner: "elumixor", ownerId: 12294750, repo: "demos", repoId: 1464707458 },
+  { owner: "elumixor", ownerId: 12294750, repo: "minigames", repoId: 1461872631 },
+  { owner: "elumixor", ownerId: 12294750, repo: "cm-bot", repoId: 1245613884 },
+  { owner: "elumixor", ownerId: 12294750, repo: "amcz", repoId: 1247105297 },
+  { owner: "elumixor", ownerId: 12294750, repo: "top-margi", repoId: 1366633673 },
+  { owner: "elumixor", ownerId: 12294750, repo: "money", repoId: 1415741993 },
+  { owner: "elumixor", ownerId: 12294750, repo: "keep", repoId: 1435042034 },
+  { owner: "elumixor", ownerId: 12294750, repo: "desk", repoId: 1435430595 },
+  { owner: "elumixor", ownerId: 12294750, repo: "people", repoId: 1435510796 },
+  { owner: "elumixor", ownerId: 12294750, repo: "prout-slides", repoId: 1287804822 },
+  { owner: "elumixor", ownerId: 12294750, repo: "portfolio", repoId: 295776241 },
+] as const;
+
+/** Who may assume the deploy role: exactly the `main` branch of each repo in `DEPLOY_REPOS`. */
+export function deployTrust(account: string): PolicyDocument {
+  return {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: { Federated: `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com` },
+        Action: "sts:AssumeRoleWithWebIdentity",
+        Condition: {
+          StringEquals: {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+            "token.actions.githubusercontent.com:sub": DEPLOY_REPOS.map(
+              (r) => `repo:${r.owner}@${r.ownerId}/${r.repo}@${r.repoId}:ref:refs/heads/main`,
+            ),
+          },
+        },
       },
     ],
   };
 }
 
 /**
- * The GitHub accounts whose repos may deploy. The id is what repos made since GitHub's immutable OIDC
- * subjects name instead of a path.
+ * The role GitHub Actions assumes. Admin only (`devkit cloud bootstrap`): it sets the trust to
+ * `deployTrust` and attaches the deploy policy, both of which the deploy role itself is denied.
  */
-export const GITHUB_OWNERS = [
-  { name: "elumixor", id: 12294750 },
-  { name: "atmagaming", id: 213760613 },
-] as const;
-
-/**
- * The role GitHub Actions assumes: only the owners' repos, only on the branches that deploy. Older repos send
- * `repo:<owner>/<repo>:…`, newer ones `repo:<owner>@<owner id>/<repo>@<repo id>:…`.
- */
-export async function ensureDeployRole(branches: readonly string[]) {
+export async function ensureDeployRole() {
   const account = await accountId();
-  const policyArn = await ensureManagedPolicy(platform.deployPolicy, await deployPolicy());
+  const policyArn = await ensureManagedPolicy(platform.deployPolicy, deployPolicy(account));
+  const trust = deployTrust(account);
   const role = await ensureRole(
     platform.deployRole,
-    {
-      Version: "2012-10-17",
-      Statement: [
-        {
-          Effect: "Allow",
-          Principal: { Federated: `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com` },
-          Action: "sts:AssumeRoleWithWebIdentity",
-          Condition: {
-            StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-            StringLike: {
-              "token.actions.githubusercontent.com:sub": branches.flatMap((branch) =>
-                GITHUB_OWNERS.flatMap((owner) => [
-                  `repo:${owner.name}/*:ref:refs/heads/${branch}`,
-                  `repo:${owner.name}@${owner.id}/*:ref:refs/heads/${branch}`,
-                ]),
-              ),
-            },
-          },
-        },
-      ],
-    },
+    trust,
     undefined,
     "Devkit Cloud: what GitHub Actions deploys with",
   );
+  if (!role.created) {
+    const current = await iam().send(new GetRoleCommand({ RoleName: platform.deployRole }));
+    const currentTrust = decodeURIComponent(current.Role?.AssumeRolePolicyDocument ?? "");
+    if (!currentTrust || JSON.stringify(JSON.parse(currentTrust)) !== JSON.stringify(trust))
+      await iam().send(
+        new UpdateAssumeRolePolicyCommand({ RoleName: platform.deployRole, PolicyDocument: JSON.stringify(trust) }),
+      );
+  }
   await retryWhile(
     () => iam().send(new AttachRolePolicyCommand({ RoleName: platform.deployRole, PolicyArn: policyArn })),
     ["NoSuchEntityException"],
@@ -324,7 +463,7 @@ export async function ensureLocalDeployProfile() {
   const user = platform.localDeployUser;
   const existing = await orUndefined(iam().send(new GetUserCommand({ UserName: user })), "NoSuchEntityException");
   if (!existing) await iam().send(new CreateUserCommand({ UserName: user, Tags: platformTags() }));
-  const policyArn = await ensureManagedPolicy(platform.deployPolicy, await deployPolicy());
+  const policyArn = await ensureManagedPolicy(platform.deployPolicy, deployPolicy(await accountId()));
   await retryWhile(
     () => iam().send(new AttachUserPolicyCommand({ UserName: user, PolicyArn: policyArn })),
     ["NoSuchEntityException"],

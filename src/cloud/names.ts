@@ -32,6 +32,8 @@ export const platform = {
   originRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac",
   deployRole: "dk-deploy",
   deployPolicy: "dk-deploy",
+  /** Permissions boundary on every role devkit creates for functions and the scheduler. */
+  boundaryPolicy: "dk-boundary",
   localDeployUser: "dk-deploy-local",
   localProfile: "devkit",
   schedulerRole: "dk-scheduler",

@@ -1,12 +1,18 @@
 import { $ } from "bun";
 import { accountId, CloudError, log } from "./aws.ts";
 import { ensureSecret, readParameter, writeParameter } from "./env.ts";
-import { PLATFORM_ALIASES, platform, STAGE_BRANCHES } from "./names.ts";
+import { PLATFORM_ALIASES, platform } from "./names.ts";
 import { ensureCertificate } from "./reconcile/acm.ts";
 import { ensureRecord } from "./reconcile/cloudflare.ts";
 import { findDistribution, reconcileAliases, waitDeployed } from "./reconcile/edge.ts";
 import { ensureAnomalyAlerts, ensureBudgets } from "./reconcile/guardrails.ts";
-import { ensureDeployRole, ensureLocalDeployProfile, ensureSchedulerRole, GITHUB_OWNERS } from "./reconcile/iam.ts";
+import {
+  DEPLOY_REPOS,
+  ensureBoundaryPolicy,
+  ensureDeployRole,
+  ensureLocalDeployProfile,
+  ensureSchedulerRole,
+} from "./reconcile/iam.ts";
 import { putEdgeSecret } from "./reconcile/kvs.ts";
 import {
   allowDistribution,
@@ -77,12 +83,14 @@ export async function bootstrap(options: BootstrapOptions = {}) {
 
   log("\naccess");
   await ensureScheduleGroup();
+  await ensureBoundaryPolicy();
+  log(`  policy ${platform.boundaryPolicy} ok`);
   const scheduler = await ensureSchedulerRole();
-  const deploy = await ensureDeployRole(Object.values(STAGE_BRANCHES));
+  const deploy = await ensureDeployRole();
   const local = await ensureLocalDeployProfile();
   log(`  role ${platform.schedulerRole} ${scheduler.created ? "created" : "ok"}`);
   log(
-    `  role ${platform.deployRole} ${deploy.created ? "created" : "ok"} (GitHub OIDC, ${GITHUB_OWNERS.map((owner) => `${owner.name}/*`).join(", ")} on ${Object.values(STAGE_BRANCHES).join(", ")})`,
+    `  role ${platform.deployRole} ${deploy.created ? "created" : "ok"} (GitHub OIDC, main of ${DEPLOY_REPOS.length} repos)`,
   );
   log(`  profile ${platform.localProfile} ${local.profile} (user ${platform.localDeployUser})`);
 
