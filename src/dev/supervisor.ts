@@ -79,7 +79,7 @@ export class Supervisor {
   }
 
   get allEnded(): boolean {
-    return this.services.every((service) => !service.alive && service.state !== "stopping");
+    return this.services.every((service) => !service.alive && !service.retrying && service.state !== "stopping");
   }
 
   /** Arrow so it can be handed to `useSyncExternalStore` unbound. */

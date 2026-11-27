@@ -10,6 +10,8 @@ const PROBE_INTERVAL_MS = 400;
 /** `bun run` reports being stopped as an error, which it isn't when devkit asked for it. */
 const STOPPED_BY_US = /terminated by signal SIG(TERM|INT|KILL)/;
 const KILL_GRACE_MS = 3_000;
+/** Waits before each automatic restart after a crash; a crash past the last one stays down. */
+const RETRY_DELAYS_MS = [1_000, 1_000, 2_000, 2_000, 3_000];
 
 /** What a service reports back to whoever supervises it. */
 export interface ServiceHooks {
@@ -33,6 +35,8 @@ export class Service {
   #child: ChildProcess | undefined;
   #closed: Promise<void> = Promise.resolve();
   #run = 0;
+  #retries = 0;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(spec: ServiceSpec, env: NodeJS.ProcessEnv, hooks: ServiceHooks) {
     this.spec = spec;
@@ -53,11 +57,21 @@ export class Service {
   get readyMs(): number | null {
     return this.#readyMs;
   }
+  /** Crashed, with an automatic restart scheduled. */
+  get retrying(): boolean {
+    return this.#retryTimer != null;
+  }
   get alive(): boolean {
     return this.#state === "starting" || this.#state === "ready" || this.#state === "running";
   }
 
   start() {
+    this.#cancelRetry();
+    this.#retries = 0;
+    this.#launch();
+  }
+
+  #launch() {
     const run = ++this.#run;
     this.#state = this.spec.port != null ? "starting" : "running";
     this.#code = null;
@@ -90,6 +104,7 @@ export class Service {
   }
 
   async stop() {
+    this.#cancelRetry();
     if (!this.#child || !this.alive) return;
     this.#state = "stopping";
     this.#hooks.changed();
@@ -112,7 +127,27 @@ export class Service {
     this.#code = code;
     this.#state = wasStopping ? "stopped" : code === 0 ? "exited" : "crashed";
     if (!wasStopping) this.#hooks.note(code === 0 ? "exited" : `crashed (${signal ?? `exit ${code}`})`);
+    if (this.#state === "crashed") this.#scheduleRetry();
     this.#hooks.changed();
+  }
+
+  #scheduleRetry() {
+    const delay = RETRY_DELAYS_MS[this.#retries];
+    if (delay == null) {
+      this.#hooks.note(`gave up after ${RETRY_DELAYS_MS.length} restarts`);
+      return;
+    }
+    this.#retries++;
+    this.#hooks.note(`restarting in ${delay / 1000}s (${this.#retries}/${RETRY_DELAYS_MS.length})`);
+    this.#retryTimer = setTimeout(() => {
+      this.#retryTimer = undefined;
+      this.#launch();
+    }, delay);
+  }
+
+  #cancelRetry() {
+    clearTimeout(this.#retryTimer);
+    this.#retryTimer = undefined;
   }
 
   async #watchPort(run: number, port: number) {
@@ -120,6 +155,7 @@ export class Service {
       if (await probePort(port)) {
         if (run !== this.#run || this.#state !== "starting") return;
         this.#state = "ready";
+        this.#retries = 0;
         this.#readyMs = Date.now() - this.#startedAt;
         this.#hooks.note(`ready at ${this.url} in ${(this.#readyMs / 1000).toFixed(1)}s`);
         this.#hooks.changed();
