@@ -15,7 +15,7 @@ export async function runUpdate(dry = false) {
   const latest = ((await response.json()) as { version: string }).version;
 
   console.log(`global: ${pkg.version} -> ${latest}`);
-  if (!dry) await $`bun add -g ${NAME}@${latest}`.quiet();
+  if (!dry) await $`bun add -g --no-cache ${NAME}@${latest}`.quiet();
 
   const manifestPath = resolve("package.json");
   if (!existsSync(manifestPath)) return;
@@ -29,5 +29,5 @@ export async function runUpdate(dry = false) {
   if (dry) return;
   const flags = [...(dev ? ["-d"] : []), ...(pinned ? ["--exact"] : [])];
   // `bun add` writes the spec verbatim, so a range has to be asked for as one.
-  await $`bun add ${flags} ${NAME}@${pinned ? "" : "^"}${latest}`.quiet();
+  await $`bun add --no-cache ${flags} ${NAME}@${pinned ? "" : "^"}${latest}`.quiet();
 }
